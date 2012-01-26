@@ -1,6 +1,6 @@
-;;; direx.el --- Directory Explorer
+;;; direx.el --- Simple Directory Explorer
 
-;; Copyright (C) 2011  Tomohiro Matsuyama
+;; Copyright (C) 2011, 2012  Tomohiro Matsuyama
 
 ;; Author: Tomohiro Matsuyama <tomo@cx4a.org>
 ;; Keywords: convenience
@@ -80,6 +80,12 @@
    (directory-file-name
     (direx:canonical-dirname dirname))))
 
+(defun direx:directory-parents (filename)
+  (loop for current-dirname = (direx:canonical-filename filename) then parent-dirname
+        for parent-dirname = (direx:directory-dirname current-dirname)
+        while (and parent-dirname (< (length parent-dirname) (length current-dirname)))
+        collect parent-dirname))
+
 
 
 ;;; Node
@@ -109,8 +115,7 @@
   (direx:node-op node :leaf))
 
 (defun direx:node-equal (x y)
-  (or (eq x y)
-      (direx:node-op x :equal y)))
+  (or (eq x y) (direx:node-op x :equal y)))
 
 (defun direx:node-contain-p (node child)
   (direx:node-op node :contain child))
@@ -180,18 +185,17 @@
 (defun direx:dirnode-contain-p (dirnode child)
   (and (memq (direx:node-type child) '(direx:filenode direx:dirnode))
        (direx:starts-with (direx:filenode-full-name child)
-                          (direx:dirnode-full-name dirnode))
-       t))
+                          (direx:dirnode-full-name dirnode))))
 
 (defun direx:dirnode-children (dirnode)
-  (let ((dirname (direx:dirnode-full-name dirnode)))
-    (loop for filename in (directory-files dirname t)
-          for basename = (file-name-nondirectory filename)
-          unless (string-match dired-trivial-filenames basename)
-          if (file-directory-p filename)
-          collect (direx:make-dirnode filename)
-          else
-          collect (direx:make-filenode filename))))
+  (loop with dirname = (direx:dirnode-full-name dirnode)
+        for filename in (directory-files dirname t)
+        for basename = (file-name-nondirectory filename)
+        unless (string-match dired-trivial-filenames basename)
+        if (file-directory-p filename)
+        collect (direx:make-dirnode filename)
+        else
+        collect (direx:make-filenode filename)))
 
 (defun direx:dirnode-action (dirnode op)
   (ecase op
@@ -217,10 +221,9 @@
   (direx:node-face (direx:item-node item)))
 
 (defun direx:item-depth (item)
-  (let ((parent (direx:item-parent item)))
-    (if parent
-        (1+ (direx:item-depth parent))
-      0)))
+  (direx:aif (direx:item-parent item)
+      (1+ (direx:item-depth it))
+    0))
 
 (defun direx:item-action (item op)
   (direx:node-action (direx:item-node item) op))
@@ -274,7 +277,7 @@ mouse-2: find this node in other window"))
   (let ((depth (direx:item-depth item))
         (buffer-read-only nil))
     (save-excursion
-      (goto-char (+ (line-beginning-position) ; line-beginning-position?
+      (goto-char (+ (line-beginning-position)
                     (* depth (string-width direx:open-icon))))
       (delete-char (length new-icon))
       (insert new-icon))))
@@ -386,6 +389,7 @@ mouse-2: find this node in other window"))
     (define-key map (kbd "f")           'direx:find-node)
     (define-key map (kbd "o")           'direx:find-node-other-window)
     (define-key map (kbd "RET")         'direx:maybe-find-node)
+    (define-key map (kbd "TAB")         'direx:maybe-find-node)
     (define-key map (kbd "q")           'quit-window)
     (define-key map [mouse-1]           'direx:mouse-1)
     (define-key map [mouse-2]           'direx:mouse-2)
@@ -412,11 +416,10 @@ mouse-2: find this node in other window"))
 (defun direx:up-node ()
   (interactive)
   (direx:aif (direx:item-at-point)
-      (progn
-        (loop with parent = (direx:item-parent it)
-              while (and (zerop (forward-line -1))
-                         (not (eq (direx:item-at-point) parent))))
-        (direx:move-to-name-part))
+      (loop with parent = (direx:item-parent it)
+            while (and (zerop (forward-line -1))
+                       (not (eq (direx:item-at-point) parent)))
+            finally (direx:move-to-name-part))
     (goto-char (point-min))))
 
 (defun direx:down-node ()
@@ -473,8 +476,8 @@ mouse-2: find this node in other window"))
               else
               do (direx:next-sibling)
               finally (goto-char point))
-      (error () (goto-char point)))))
-    
+      (error (goto-char point)))))
+
 (defun direx:find-node (&optional item)
   (interactive)
   (direx:awhen (or item (direx:item-at-point))
@@ -533,15 +536,12 @@ mouse-2: find this node in other window"))
 
 (defun direx:find-directory-reuse-noselect (dirname)
   (interactive "DDirex (directory): ")
-  (loop repeat 16                       ; make sure finite loop
-        for current-dirname = dirname then parent-dirname
-        for parent-dirname = (direx:directory-dirname current-dirname)
+  (loop for current-dirname = dirname then parent-dirname
+        for parent-dirname in (direx:directory-parents dirname)
         for dirnode = (direx:make-dirnode current-dirname)
         for buffer = (direx:find-buffer-for-root dirnode)
-        if buffer
-        return buffer
-        if (equal current-dirname parent-dirname)
-        return (direx:find-directory-noselect dirname)))
+        if buffer return buffer
+        finally return (direx:find-directory-noselect dirname)))
 
 (defun direx:find-directory-reuse (dirname)
   (interactive "DDirex (directory): ")
@@ -551,17 +551,20 @@ mouse-2: find this node in other window"))
   (interactive "DDirex (directory): ")
   (switch-to-buffer-other-window (direx:find-directory-reuse-noselect dirname)))
 
-(defun direx:jump-to-directory-noselect ()
-  (interactive)
-  (let* ((dirname default-directory)
-         (filename buffer-file-name)
-         (buffer (direx:find-directory-reuse-noselect dirname)))
+(defun direx:maybe-goto-current-node-in-directory (buffer)
+  (let ((filename buffer-file-name)
+        (dirname default-directory))
     (with-current-buffer buffer
       (ignore-errors
-        (direx:goto-node
-         (if filename
-             (direx:make-filenode filename)
-           (direx:make-dirnode dirname)))))
+        (cond (filename
+               (direx:goto-node (direx:make-filenode filename)))
+              (dirname
+               (direx:goto-node (direx:make-dirnode dirname))))))))
+
+(defun direx:jump-to-directory-noselect ()
+  (interactive)
+  (let ((buffer (direx:find-directory-reuse-noselect default-directory)))
+    (direx:maybe-goto-current-node-in-directory buffer)
     buffer))
 
 (defun direx:jump-to-directory ()
@@ -571,6 +574,46 @@ mouse-2: find this node in other window"))
 (defun direx:jump-to-directory-other-window ()
   (interactive)
   (switch-to-buffer-other-window (direx:jump-to-directory-noselect)))
+
+
+
+;;; Project
+
+(defcustom direx:project-root-predicate-functions
+  '(direx:git-root-p)
+  "List of functions which predicate whether the directory is a
+project root or not."
+  :type '(repeat function)
+  :group 'direx)
+
+(defun direx:git-root-p (dirname)
+  (file-exists-p (expand-file-name ".git" dirname)))
+
+(defun direx:project-root-p (dirname)
+  (loop for fun in direx:project-root-predicate-functions
+        thereis (funcall fun dirname)))
+
+(defun direx:jump-to-project-root-noselect ()
+  (interactive)
+  (loop for parent-dirname in (direx:directory-parents buffer-file-name)
+        if (direx:project-root-p parent-dirname)
+        return (let ((buffer (direx:find-directory-noselect parent-dirname)))
+                 (direx:maybe-goto-current-node-in-directory buffer)
+                 buffer)))
+
+(defun direx:jump-to-project-root ()
+  (interactive)
+  (let ((buffer (direx:jump-to-project-root-noselect)))
+    (if buffer
+        (switch-to-buffer buffer)
+      (error "Project root not found"))))
+
+(defun direx:jump-to-project-root-other-window ()
+  (interactive)
+  (let ((buffer (direx:jump-to-project-root-noselect)))
+    (if buffer
+        (switch-to-buffer-other-window buffer)
+      (error "Project root not found"))))
 
 (provide 'direx)
 ;;; direx.el ends here
