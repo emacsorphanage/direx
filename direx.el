@@ -627,45 +627,5 @@ mouse-2: find this node in other window"))
   (interactive)
   (switch-to-buffer-other-window (direx:jump-to-directory-noselect)))
 
-
-
-;;; Project
-
-(defcustom direx:project-root-predicate-functions
-  '(direx:git-root-p)
-  "List of functions which predicate whether the directory is a
-project root or not."
-  :type '(repeat function)
-  :group 'direx)
-
-(defun direx:git-root-p (dirname)
-  (file-exists-p (expand-file-name ".git" dirname)))
-
-(defun direx:project-root-p (dirname)
-  (some (lambda (fun) (funcall fun dirname))
-        direx:project-root-predicate-functions))
-
-(defun direx:jump-to-project-root-noselect ()
-  (interactive)
-  (loop for parent-dirname in (direx:directory-parents (or buffer-file-name default-directory))
-        if (direx:project-root-p parent-dirname)
-        return (let ((buffer (direx:find-directory-noselect parent-dirname)))
-                 (direx:maybe-goto-current-node-in-directory buffer)
-                 buffer)))
-
-(defun direx:jump-to-project-root ()
-  (interactive)
-  (let ((buffer (direx:jump-to-project-root-noselect)))
-    (if buffer
-        (switch-to-buffer buffer)
-      (error "Project root not found"))))
-
-(defun direx:jump-to-project-root-other-window ()
-  (interactive)
-  (let ((buffer (direx:jump-to-project-root-noselect)))
-    (if buffer
-        (switch-to-buffer-other-window buffer)
-      (error "Project root not found"))))
-
 (provide 'direx)
 ;;; direx.el ends here
