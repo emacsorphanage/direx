@@ -65,6 +65,12 @@
     (lambda (&rest restargs)
       (apply fun (append args restargs)))))
 
+(defun direx:walk-tree (fun object)
+  (if (atom object)
+      (funcall fun object)
+    (direx:walk-tree fun (car object))
+    (direx:walk-tree fun (cdr object))))
+
 (defun direx:starts-with (x y)
   (and (<= (length y) (length x))
        (equal (substring x 0 (length y)) y)))
@@ -95,6 +101,9 @@
 
 ;;; Node
 
+(defun* direx:make-node (&rest props &key type name leaf children equal contain face action &allow-other-keys)
+  props)
+
 (defun direx:node-get (node prop)
   (plist-get node prop))
 
@@ -103,6 +112,16 @@
     (if (functionp obj)
         (apply obj node args)
       obj)))
+
+(defun direx:node-set (node prop value)
+  (loop for node-prop = (car node)
+        while node
+        if (eq prop node-prop)
+        return (setf (cadr node) value)
+        else if (null (cddr node))
+        return (prog1 value (setf (cddr node) (list prop value)))
+        else
+        do (setq node (cddr node))))
 
 (defun direx:node-type (node)
   (direx:node-op node :type))
@@ -136,12 +155,12 @@
 ;;; File node
 
 (defun direx:make-filenode (filename)
-  (list :type      'direx:filenode
-        :name      (file-name-nondirectory filename)
-        :full-name (direx:canonical-filename filename)
-        :leaf      t
-        :equal     'direx:filenode-equal
-        :action    'direx:filenode-action))
+  (direx:make-node :type      'direx:filenode
+                   :name      (file-name-nondirectory filename)
+                   :full-name (direx:canonical-filename filename)
+                   :leaf      t
+                   :equal     'direx:filenode-equal
+                   :action    'direx:filenode-action))
 
 (defun direx:filenode-full-name (filenode)
   (direx:node-op filenode :full-name))
@@ -169,14 +188,14 @@
          (name (if (zerop (length basename))
                    full-name
                  basename)))
-    (list :type      'direx:dirnode
-          :name      name
-          :full-name full-name
-          :face      'dired-directory
-          :equal     'direx:dirnode-equal
-          :contain   'direx:dirnode-contain-p
-          :children  'direx:dirnode-children
-          :action    'direx:dirnode-action)))
+    (direx:make-node :type      'direx:dirnode
+                     :name      name
+                     :full-name full-name
+                     :face      'dired-directory
+                     :equal     'direx:dirnode-equal
+                     :contain   'direx:dirnode-contain-p
+                     :children  'direx:dirnode-children
+                     :action    'direx:dirnode-action)))
 
 (defun direx:dirnode-full-name (dirnode)
   (direx:node-op dirnode :full-name))
@@ -240,6 +259,9 @@
 
 (defun direx:item-action (item op)
   (direx:node-action (direx:item-node item) op))
+
+(defun direx:item-buffer (item)
+  (overlay-buffer (direx:item-overlay item)))
 
 (defun direx:item-icon-part-offset (item)
   (* (direx:item-depth item)
@@ -382,38 +404,46 @@ mouse-2: find this node in other window"))
 
 ;;; Major mode
 
-(defun direx:make-buffer (name)
-  (let ((buffer (generate-new-buffer name)))
-    (with-current-buffer buffer (direx:direx-mode))
-    buffer))
-
 (defun direx:buffer-list ()
   (loop for buffer in (buffer-list)
         if (eq (buffer-local-value 'major-mode buffer)
                'direx:direx-mode)
         collect buffer))
 
-(defun direx:add-root-into-buffer (root buffer)
+(defun direx:make-buffer (name)
+  (let ((buffer (generate-new-buffer name)))
+    (with-current-buffer buffer (direx:direx-mode))
+    buffer))
+
+(defun direx:make-buffer-for-root (root)
+  (let ((buffer (direx:make-buffer (direx:node-name root))))
+    (direx:insert-root-into-buffer root buffer)
+    buffer))
+
+(defun direx:find-root-item-if (predicate)
+  (find-if predicate
+           (mapcar (direx:partial 'buffer-local-value 'direx:root-item)
+                   (direx:buffer-list))))
+
+(defun direx:insert-root-into-buffer (root buffer)
   (with-current-buffer buffer
     (save-excursion
       (let ((root-item (direx:make-item root))
             (buffer-read-only nil))
         (goto-char (point-max))
         (direx:item-insert root-item)
-        (push root-item direx:root-items)))
+        (setq direx:root-item root-item)))
     (direx:move-to-name-part)))
 
-(defun direx:find-root-in-buffer (root buffer)
-  (with-current-buffer buffer
-    (find-if (lambda (root-item) (direx:node-equal root (direx:item-node root-item)))
-             direx:root-items)))
-
-(defun direx:find-buffers-for-root (root)
-  (remove-if-not (direx:partial 'direx:find-root-in-buffer root)
-                 (direx:buffer-list)))
-
 (defun direx:find-buffer-for-root (root)
-  (first (direx:find-buffers-for-root root)))
+  (direx:awhen
+      (direx:find-root-item-if
+       (lambda (root-item) (direx:node-equal root (direx:item-node root-item))))
+    (direx:item-buffer it)))
+
+(defun direx:ensure-buffer-for-root (root)
+  (or (direx:find-buffer-for-root root)
+      (direx:make-buffer-for-root root)))
 
 (defvar direx:direx-mode-map
   (let ((map (make-sparse-keymap)))
@@ -486,9 +516,7 @@ mouse-2: find this node in other window"))
   (setq arg (if (or (null arg) (> arg 0)) 1 -1))
   (direx:aif (direx:item-at-point)
       (let* ((parent (direx:item-parent it))
-             (siblings (if parent
-                           (direx:item-children parent)
-                         direx:root-items))
+             (siblings (when parent (direx:item-children parent)))
              (siblings (if (plusp arg) siblings (reverse siblings)))
              (sibling (second (memq it siblings))))
         (loop with point = (point)
@@ -512,14 +540,16 @@ mouse-2: find this node in other window"))
 (defun direx:goto-node (node)
   (let ((point (point)))
     (goto-char (point-min))
-    (condition-case nil
+    (condition-case error
         (loop for item = (direx:item-at-point)
               for item-node = (and item (direx:item-node item))
               while item-node
               if (direx:node-equal item-node node)
               return (direx:move-to-name-part)
               else if (direx:node-contain-p item-node node)
-              do (direx:down-node)
+              do (if (direx:node-leaf-p item-node)
+                     (return (direx:move-to-name-part))
+                   (direx:down-node))
               else
               do (direx:next-sibling)
               finally (goto-char point))
@@ -560,7 +590,7 @@ mouse-2: find this node in other window"))
 
 (define-derived-mode direx:direx-mode nil "Direx"
   ""
-  (set (make-local-variable 'direx:root-items) nil)
+  (set (make-local-variable 'direx:root-item) nil)
   (setq buffer-read-only t
         truncate-lines t)
   (use-local-map direx:direx-mode-map))
@@ -571,12 +601,7 @@ mouse-2: find this node in other window"))
 
 (defun direx:find-directory-noselect (dirname)
   (interactive "DDirex (directory): ")
-  (let* ((root (direx:make-dirnode dirname))
-         (buffer (direx:find-buffer-for-root root)))
-    (unless buffer
-      (setq buffer (direx:make-buffer (direx:node-name root)))
-      (direx:add-root-into-buffer root buffer))
-    buffer))
+  (direx:ensure-buffer-for-root (direx:make-dirnode dirname)))
 
 (defun direx:find-directory (dirname)
   (interactive "DDirex (directory): ")
