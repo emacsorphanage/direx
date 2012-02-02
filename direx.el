@@ -576,7 +576,7 @@ mouse-2: find this node in other window"))
 (defun direx:refresh-tree (&optional item)
   (interactive)
   (direx:awhen (or item (direx:item-at-point))
-    (direx:item-refresh (direx:item-root it))))
+    (direx:item-refresh (direx:item-root it) :recursive t)))
 
 (defun direx:mouse-1 (event)
   (interactive "e")
