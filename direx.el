@@ -24,9 +24,9 @@
 
 ;;; Code:
 
-(require 'dired)
-
 (require 'cl)
+(require 'eieio)
+(require 'dired)
 
 (defgroup direx nil
   "Directory Explorer."
@@ -65,15 +65,15 @@
     (lambda (&rest restargs)
       (apply fun (append args restargs)))))
 
+(defun direx:starts-with (x y)
+  (and (<= (length y) (length x))
+       (equal (substring x 0 (length y)) y)))
+
 (defun direx:walk-tree (fun object)
   (if (atom object)
       (funcall fun object)
     (direx:walk-tree fun (car object))
     (direx:walk-tree fun (cdr object))))
-
-(defun direx:starts-with (x y)
-  (and (<= (length y) (length x))
-       (equal (substring x 0 (length y)) y)))
 
 (defun direx:canonical-filename (filename)
   (expand-file-name filename))
@@ -99,153 +99,83 @@
 
 
 
-;;; Node
+;;; Trees
 
-(defun* direx:make-node (&rest props &key type name leaf children equal contain face action &allow-other-keys)
-  props)
+(defclass direx:tree ()
+  ((name :initarg :name
+         :accessor direx:tree-name)))
 
-(defun direx:node-get (node prop)
-  (plist-get node prop))
+(defgeneric direx:tree-equals (x y)
+  "Returns t if X is equal to Y.")
 
-(defun direx:node-op (node op &rest args)
-  (let ((obj (direx:node-get node op)))
-    (if (functionp obj)
-        (apply obj node args)
-      obj)))
+(defmethod direx:tree-equals (x y)
+  (eq x y))
 
-(defun direx:node-set (node prop value)
-  (loop for node-prop = (car node)
-        while node
-        if (eq prop node-prop)
-        return (setf (cadr node) value)
-        else if (null (cddr node))
-        return (prog1 value (setf (cddr node) (list prop value)))
-        else
-        do (setq node (cddr node))))
+(defclass direx:node (direx:tree)
+  ())
 
-(defun direx:node-type (node)
-  (direx:node-op node :type))
+(defgeneric direx:node-children (node)
+  "Returns the children of the NODE.")
 
-(defun direx:node-same-type-p (x y)
-  (eq (direx:node-type x) (direx:node-type y)))
+(defmethod direx:node-children (node)
+  nil)
 
-(defun direx:node-name (node)
-  (direx:node-op node :name))
+(defgeneric direx:node-contains (node descendant)
+  "Returns t if the NODE has the DESCENDANT. The default
+implementation of this generic function uses
+`direx:node-children' to expand the descendants of the NODE
+recursively and check if the DESCENDANT is a member of the
+descendants. You may add a heuristic method for speed.")
 
-(defun direx:node-face (node)
-  (direx:node-op node :face))
+(defmethod direx:node-contains (node descendant)
+  (loop for child in (direx:node-children node) thereis
+        (or (direx:tree-equals child descendant)
+            (and (typep child 'direx:node)
+                 (direx:node-contains child descendant)))))
 
-(defun direx:node-leaf-p (node)
-  (direx:node-op node :leaf))
-
-(defun direx:node-equal (x y)
-  (or (eq x y) (direx:node-op x :equal y)))
-
-(defun direx:node-contain-p (node child)
-  (direx:node-op node :contain child))
-
-(defun direx:node-children (node)
-  (direx:node-op node :children))
-
-(defun direx:node-action (node op)
-  (direx:node-op node :action op))
+(defclass direx:leaf (direx:tree)
+  ())
 
 
 
-;;; File node
+;;; Tree Widgets
 
-(defun direx:make-filenode (filename)
-  (direx:make-node :type      'direx:filenode
-                   :name      (file-name-nondirectory filename)
-                   :full-name (direx:canonical-filename filename)
-                   :leaf      t
-                   :equal     'direx:filenode-equal
-                   :action    'direx:filenode-action))
+(defclass direx:item ()
+  ((tree :initarg :tree
+         :accessor direx:item-tree)
+   (parent :initarg :parent
+           :accessor direx:item-parent)
+   (children :accessor direx:item-children)
+   (face :initarg :face
+         :accessor direx:item-face)
+   (keymap :initarg :keymap
+           :accessor direx:item-keymap)
+   (overlay :accessor direx:item-overlay)
+   (open :accessor direx:item-open)))
 
-(defun direx:filenode-full-name (filenode)
-  (direx:node-op filenode :full-name))
+(defgeneric direx:generic-find-item (item not-this-window))
 
-(defun direx:filenode-action (filenode op)
-  (ecase op
-    (:find-node
-     (find-file (direx:filenode-full-name filenode)))
-    (:find-node-other-window
-     (find-file-other-window (direx:filenode-full-name filenode)))))
+(defgeneric direx:make-item (tree parent)
+  "Returns a item of the TREE.")
 
-(defun direx:filenode-equal (x y)
-  (and (eq (direx:node-type x) 'direx:filenode)
-       (eq (direx:node-type y) 'direx:filenode)
-       (equal (direx:filenode-full-name x)
-              (direx:filenode-full-name y))))
+(defmethod direx:make-item (tree parent)
+  (make-instance 'direx:item :tree tree :parent parent))
 
-
+(defun direx:make-item-children (item)
+  (loop for child-tree in (direx:node-children (direx:item-tree item))
+        collect (direx:make-item child-tree item)))
 
-;;; Directory node
-
-(defun direx:make-dirnode (dirname)
-  (let* ((full-name (direx:canonical-dirname dirname))
-         (basename (direx:directory-basename dirname))
-         (name (if (zerop (length basename))
-                   full-name
-                 basename)))
-    (direx:make-node :type      'direx:dirnode
-                     :name      name
-                     :full-name full-name
-                     :face      'dired-directory
-                     :equal     'direx:dirnode-equal
-                     :contain   'direx:dirnode-contain-p
-                     :children  'direx:dirnode-children
-                     :action    'direx:dirnode-action)))
-
-(defun direx:dirnode-full-name (dirnode)
-  (direx:node-op dirnode :full-name))
-
-(defun direx:dirnode-equal (x y)
-  (and (eq (direx:node-type x) 'direx:dirnode)
-       (eq (direx:node-type y) 'direx:dirnode)
-       (equal (direx:dirnode-full-name x)
-              (direx:dirnode-full-name y))))
-
-(defun direx:dirnode-contain-p (dirnode child)
-  (and (memq (direx:node-type child) '(direx:filenode direx:dirnode))
-       (direx:starts-with (direx:filenode-full-name child)
-                          (direx:dirnode-full-name dirnode))))
-
-(defun direx:dirnode-children (dirnode)
-  (loop with dirname = (direx:dirnode-full-name dirnode)
-        for filename in (directory-files dirname t)
-        for basename = (file-name-nondirectory filename)
-        unless (string-match dired-trivial-filenames basename)
-        if (file-directory-p filename)
-        collect (direx:make-dirnode filename)
-        else
-        collect (direx:make-filenode filename)))
-
-(defun direx:dirnode-action (dirnode op)
-  (ecase op
-    (:find-node
-     (dired (direx:dirnode-full-name dirnode)))
-    (:find-node-other-window
-     (dired-other-window (direx:dirnode-full-name dirnode)))))
-
-
-
-;;; Tree widget
-
-(defstruct (direx:item (:constructor direx:make-item (node &key parent)))
-  node open parent children overlay)
+(defun direx:item-equals (x y)
+  (direx:tree-equals (direx:item-tree x) (direx:item-tree y)))
 
 (defun direx:item-name (item)
-  (direx:node-name (direx:item-node item)))
+  (direx:tree-name (direx:item-tree item)))
 
 (defun direx:item-leaf-p (item)
-  (direx:node-leaf-p (direx:item-node item)))
+  (typep (direx:item-tree item) 'direx:leaf))
 
-(defun direx:item-equal (x y)
-  (direx:node-equal (direx:item-node x) (direx:item-node y)))
-
-(defun direx:item-face (item)
-  (direx:node-face (direx:item-node item)))
+(defun direx:item-node-p (item)
+  (typep (direx:item-tree item) 'direx:node))
 
 (defun direx:item-depth (item)
   (direx:aif (direx:item-parent item)
@@ -257,81 +187,88 @@
       (direx:item-root it)
     item))
 
-(defun direx:item-action (item op)
-  (direx:node-action (direx:item-node item) op))
-
 (defun direx:item-buffer (item)
   (overlay-buffer (direx:item-overlay item)))
 
+;; Rendering
+
 (defun direx:item-icon-part-offset (item)
-  (* (direx:item-depth item)
-     (length direx:open-icon)))
+  (* (direx:item-depth item) (length direx:open-icon)))
 
 (defun direx:item-name-part-offset (item)
-  (+ (direx:item-icon-part-offset item)
-     (length direx:open-icon)))
+  (+ (direx:item-icon-part-offset item) (length direx:open-icon)))
 
-(defun direx:item-at-point (&optional position)
-  (get-char-property (or position (point)) 'direx:item))
-
-(defun direx:item-at-event (event)
-  (direx:awhen (posn-window (event-end event))
-    (with-selected-window it
-      (direx:item-at-point (posn-point (event-end event))))))
-
-(defun direx:item-make-children (item)
-  (mapcar (lambda (child-node) (direx:make-item child-node :parent item))
-          (direx:node-children (direx:item-node item))))
-
-(defun direx:item-make-indent (item)
+(defun direx:item-render-indent-part (item)
   (make-string (direx:item-icon-part-offset item) ? ))
 
-(defun direx:item-make-icon-part (item)
+(defun direx:item-render-icon-part (item)
   (if (direx:item-leaf-p item)
       direx:leaf-icon
     direx:closed-icon))
 
-(defun direx:item-make-name-part (item)
+(defun direx:item-render-name-part (item)
   (propertize (direx:item-name item)
               'face (direx:item-face item)
               'mouse-face 'hightlight
               'help-echo "mouse-1: toggle or find this node
 mouse-2: find this node in other window"))
 
+(defun direx:item-render (item)
+  (concat (direx:item-render-indent-part item)
+          (direx:item-render-icon-part item)
+          (direx:item-render-name-part item)
+          "\n"))
+
+(defun direx:item-make-overlay (item start end)
+  (let ((overlay (make-overlay start end nil t nil)))
+    (overlay-put overlay 'direx:item item)
+    (overlay-put overlay 'keymap (direx:item-keymap item))
+    (setf (direx:item-overlay item) overlay)
+    overlay))
+
 (defun direx:item-insert (item)
   (let ((start (point))
         (buffer-read-only nil))
-    (insert
-     (concat
-      (direx:item-make-indent item)
-      (direx:item-make-icon-part item)
-      (direx:item-make-name-part item)
-      "\n"))
-    (let ((overlay (make-overlay start (point))))
-      (overlay-put overlay 'direx:item item)
-      (setf (direx:item-overlay item) overlay))
+    (insert (direx:item-render item))
+    (direx:item-make-overlay item start (point))
     item))
+
+(defun direx:item-insert-children (item)
+  (let ((children (direx:make-item-children item)))
+    (setf (direx:item-children item) children)
+    (save-excursion
+      (goto-char (overlay-end (direx:item-overlay item)))
+      (dolist (child children)
+        (direx:item-insert child)))))
+
+(defun direx:item-ensure-children (item)
+  (unless (direx:item-children item)
+    (direx:item-insert-children item)))
 
 (defun* direx:item-delete (item &key recursive)
   (let* ((overlay (direx:item-overlay item))
          (start (overlay-start overlay))
          (end (overlay-end overlay))
          (buffer-read-only nil))
-    (delete-overlay overlay)
     (delete-region start end)
+    (delete-overlay overlay)
     (when (and recursive
                (not (direx:item-leaf-p item)))
       (dolist (child (direx:item-children item))
         (direx:item-delete child :recursive t)))))
 
 (defun direx:item-change-icon (item new-icon)
-  (let ((depth (direx:item-depth item))
-        (buffer-read-only nil))
+  (let ((buffer-read-only nil))
     (save-excursion
+      ;; Insert the icon carefully with consideration of the
+      ;; front-advance overlay.
       (goto-char (+ (line-beginning-position)
-                    (* depth (string-width direx:open-icon))))
-      (delete-char (length new-icon))
-      (insert new-icon))))
+                    (direx:item-name-part-offset item)))
+      (insert new-icon)
+      ;; Then delete the icon.
+      (goto-char (+ (line-beginning-position)
+                    (direx:item-icon-part-offset item)))
+      (delete-char (length new-icon)))))
 
 (defun direx:item-show (item)
   (overlay-put (direx:item-overlay item) 'invisible nil))
@@ -353,23 +290,24 @@ mouse-2: find this node in other window"))
 
 (defun direx:item-expand (item)
   (unless (direx:item-leaf-p item)
-    (let ((children (direx:item-children item)))
-      (unless children
-        (setf children (direx:item-make-children item)
-              (direx:item-children item) children)
-        (save-excursion
-          (goto-char (overlay-end (direx:item-overlay item)))
-          (dolist (child children)
-            (direx:item-insert child)))))
     (setf (direx:item-open item) t)
+    (direx:item-ensure-children item)
     (direx:item-show-children item)
     (direx:item-change-icon item direx:open-icon)))
+
+(defun direx:item-ensure-open (item)
+  (unless (direx:item-open item)
+    (direx:item-expand item)))
 
 (defun direx:item-collapse (item)
   (unless (direx:item-leaf-p item)
     (setf (direx:item-open item) nil)
     (direx:item-hide-children item)
     (direx:item-change-icon item direx:closed-icon)))
+
+(defun direx:item-ensure-closed (item)
+  (when (direx:item-open item)
+    (direx:item-collapse item)))
 
 (defun direx:item-toggle (item)
   (if (direx:item-open item)
@@ -381,17 +319,18 @@ mouse-2: find this node in other window"))
              (direx:item-children item))
     (loop with point = (overlay-end (direx:item-overlay item))
           with old-children = (direx:item-children item)
-          for child in (direx:item-make-children item)
-          for old-child = (find-if (direx:partial 'direx:item-equal child) old-children)
+          for new-child in (direx:make-item-children item)
+          for old-child = (find-if (direx:partial 'direx:item-equals new-child)
+                                   old-children)
           if old-child
-          do (setq child old-child
+          do (setq new-child old-child
                    old-children (delq old-child old-children))
           else
           do (save-excursion
                (goto-char point)
-               (direx:item-insert child))
-          do (setq point (overlay-end (direx:item-overlay child)))
-          collect child into new-children
+               (direx:item-insert new-child))
+          do (setq point (overlay-end (direx:item-overlay new-child)))
+          collect new-child into new-children
           finally
           (dolist (old-child old-children)
             (direx:item-delete old-child :recursive t))
@@ -400,14 +339,172 @@ mouse-2: find this node in other window"))
             (dolist (new-child new-children)
               (direx:item-refresh new-child :recursive t))))))
 
+(defun* direx:item-refresh-parent (item &key recursive)
+  (direx:awhen (direx:item-parent item)
+    (direx:item-refresh it :recursive recursive)))
+
 
 
-;;; Major mode
+;;; File System
+
+;; Trees
+
+(defclass direx:file (direx:tree)
+  ((full-name :initarg :full-name
+              :accessor direx:file-full-name)))
+
+(defmethod direx:tree-equals ((x direx:file) (y direx:file))
+  (or (eq x y)
+      (equal (direx:file-full-name x) (direx:file-full-name y))))
+
+(defclass direx:regular-file (direx:file direx:leaf)
+  ())
+
+(defun direx:make-regular-file (filename)
+  (make-instance 'direx:regular-file
+                 :name (file-name-nondirectory filename)
+                 :full-name (direx:canonical-filename filename)))
+
+(defclass direx:directory (direx:file direx:node)
+  ())
+
+(defun direx:make-directory (dirname)
+  (let* ((dirname (direx:canonical-dirname dirname))
+         (basename (direx:directory-basename dirname))
+         (name (if (zerop (length basename)) dirname basename)))
+    (make-instance 'direx:directory
+                   :name name
+                   :full-name dirname)))
+
+(defmethod direx:node-children ((dir direx:directory))
+  (loop with dirname = (direx:file-full-name dir)
+        for filename in (directory-files dirname t)
+        for basename = (file-name-nondirectory filename)
+        unless (string-match dired-trivial-filenames basename)
+        if (file-directory-p filename)
+        collect (direx:make-directory filename)
+        else
+        collect (direx:make-regular-file filename)))
+
+(defmethod direx:node-contains ((dir direx:directory) (file direx:file))
+  (direx:starts-with (direx:file-full-name file)
+                     (direx:file-full-name dir)))
+
+;; Tree Items
+
+(defclass direx:file-item (direx:item)
+  ())
+
+(defvar direx:file-keymap
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "R") 'direx:do-rename-file)
+    (define-key map (kbd "C") 'direx:do-copy-files)
+    (define-key map (kbd "D") 'direx:do-delete-files)
+    (define-key map (kbd "+") 'direx:create-directory)
+    map))
+
+(defun direx:do-rename-file ()
+  (interactive)
+  (let* ((item (direx:item-at-point!))
+         (file (direx:item-tree item))
+         (to (read-file-name (format "Rename %s to " (direx:tree-name file)))))
+    (dired-rename-file (direx:file-full-name file) to nil)
+    (direx:item-refresh-parent item)
+    (direx:move-to-item-name-part)))
+
+(defun direx:do-copy-files ()
+  (interactive)
+  (let* ((item (direx:item-at-point!))
+         (file (direx:item-tree item))
+         (to (read-directory-name (format "Copy %s to " (direx:tree-name file)))))
+    (dired-copy-file (direx:file-full-name file) to nil)
+    (direx:item-refresh-parent item)
+    (direx:move-to-item-name-part)))
+
+(defun direx:do-delete-files ()
+  (interactive)
+  (let* ((item (direx:item-at-point!))
+         (file (direx:item-tree item)))
+    (when (yes-or-no-p (format "Delete %s" (direx:tree-name file)))
+      (dired-delete-file (direx:file-full-name file) dired-recursive-deletes t)
+      (direx:item-refresh-parent item)
+      (direx:move-to-item-name-part))))
+
+(defun direx:create-directory ()
+  (interactive)
+  (let* ((item (direx:item-at-point!))
+         (file (direx:item-tree item))
+         (parent-dir
+          (if (typep file 'direx:directory)
+              (direx:file-full-name file)
+            (direx:directory-dirname
+             (direx:file-full-name file))))
+         (dir (read-directory-name "Create directory: " parent-dir)))
+    (when (file-exists-p dir)
+      (error "Can't create directory %s: file exists" dir))
+    (make-directory dir t)
+    (direx:item-refresh-parent item)
+    (direx:move-to-item-name-part)))
+
+(defclass direx:regular-file-item (direx:file-item)
+  ())
+
+(defmethod direx:generic-find-item ((item direx:regular-file-item) not-this-window)
+  (let ((filename (direx:file-full-name (direx:item-tree item))))
+    (if not-this-window
+        (find-file-other-window filename)
+      (find-file filename))))
+
+(defmethod direx:make-item ((file direx:regular-file) parent)
+  (make-instance 'direx:regular-file-item
+                 :tree file
+                 :parent parent
+                 :keymap direx:file-keymap))
+
+(defclass direx:directory-item (direx:file-item)
+  ())
+
+(defmethod direx:generic-find-item ((item direx:directory-item) not-this-window)
+  (let ((dirname (direx:file-full-name (direx:item-tree item))))
+    (if not-this-window
+        (dired-other-window dirname)
+      (dired dirname))))
+
+(defmethod direx:make-item ((dir direx:directory) parent)
+  (make-instance 'direx:directory-item
+                 :tree dir
+                 :parent parent
+                 :face 'dired-directory
+                 :keymap direx:file-keymap))
+
+
+
+;;; Tree Buffers
+
+(defun direx:item-at-point (&optional point)
+  (get-char-property (or point (point)) 'direx:item))
+
+(defun direx:item-at-point! (&optional point)
+  (or (direx:item-at-point point)
+      (error "No item at point")))
+
+(defun direx:item-at-event (event)
+  (direx:awhen (posn-window (event-end event))
+    (with-selected-window it
+      (direx:item-at-point (posn-point (event-end event))))))
+
+(defun direx:find-root-item-if (predicate)
+  (find-if predicate
+           (mapcar (direx:partial 'buffer-local-value 'direx:root-item)
+                   (direx:buffer-list))))
+
+(defun direx:find-root-item-for-root (root)
+  (direx:find-root-item-if
+   (lambda (item) (direx:tree-equals root (direx:item-tree item)))))
 
 (defun direx:buffer-list ()
   (loop for buffer in (buffer-list)
-        if (eq (buffer-local-value 'major-mode buffer)
-               'direx:direx-mode)
+        if (eq (buffer-local-value 'major-mode buffer) 'direx:direx-mode)
         collect buffer))
 
 (defun direx:make-buffer (name)
@@ -416,177 +513,179 @@ mouse-2: find this node in other window"))
     buffer))
 
 (defun direx:make-buffer-for-root (root)
-  (let ((buffer (direx:make-buffer (direx:node-name root))))
-    (direx:insert-root-into-buffer root buffer)
+  (let ((buffer (direx:make-buffer (direx:tree-name root))))
+    (direx:add-root-into-buffer root buffer)
     buffer))
-
-(defun direx:find-root-item-if (predicate)
-  (find-if predicate
-           (mapcar (direx:partial 'buffer-local-value 'direx:root-item)
-                   (direx:buffer-list))))
-
-(defun direx:insert-root-into-buffer (root buffer)
-  (with-current-buffer buffer
-    (save-excursion
-      (let ((root-item (direx:make-item root))
-            (buffer-read-only nil))
-        (goto-char (point-max))
-        (direx:item-insert root-item)
-        (setq direx:root-item root-item)))
-    (direx:move-to-name-part)))
-
-(defun direx:find-buffer-for-root (root)
-  (direx:awhen
-      (direx:find-root-item-if
-       (lambda (root-item) (direx:node-equal root (direx:item-node root-item))))
-    (direx:item-buffer it)))
 
 (defun direx:ensure-buffer-for-root (root)
   (or (direx:find-buffer-for-root root)
       (direx:make-buffer-for-root root)))
 
-(defvar direx:direx-mode-map
-  (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "n")           'direx:next-node)
-    (define-key map (kbd "C-n")         'direx:next-node)
-    (define-key map (kbd "<down>")      'direx:next-node)
-    (define-key map (kbd "p")           'direx:previous-node)
-    (define-key map (kbd "C-p")         'direx:previous-node)
-    (define-key map (kbd "<up>")        'direx:previous-node)
-    (define-key map (kbd "C-M-n")       'direx:next-sibling)
-    (define-key map (kbd "C-M-<down>")  'direx:next-sibling)
-    (define-key map (kbd "C-M-p")       'direx:previous-sibling)
-    (define-key map (kbd "C-M-<up>")    'direx:previous-sibling)
-    (define-key map (kbd "^")           'direx:up-node)
-    (define-key map (kbd "C-M-u")       'direx:up-node)
-    (define-key map (kbd "C-M-<left>")  'direx:up-node)
-    (define-key map (kbd "C-M-d")       'direx:down-node)
-    (define-key map (kbd "C-M-<right>") 'direx:up-node)
-    (define-key map (kbd "f")           'direx:find-node)
-    (define-key map (kbd "o")           'direx:find-node-other-window)
-    (define-key map (kbd "RET")         'direx:maybe-find-node)
-    (define-key map (kbd "TAB")         'direx:maybe-find-node)
-    (define-key map (kbd "q")           'quit-window)
-    (define-key map (kbd "g")           'direx:refresh-tree)
-    (define-key map [mouse-1]           'direx:mouse-1)
-    (define-key map [mouse-2]           'direx:mouse-2)
-    map))
+(defun direx:find-buffer-for-root (root)
+  (direx:awhen (direx:find-root-item-for-root root)
+    (direx:item-buffer it)))
 
-(defun direx:ensure-name-part-visible ())
+(defun direx:add-root-into-buffer (root buffer)
+  (with-current-buffer buffer
+    (save-excursion
+      (let ((root-item (direx:make-item root nil))
+            (buffer-read-only nil))
+        (goto-char (point-max))
+        (direx:item-insert root-item)
+        (setq direx:root-item root-item)))))
 
-(defun direx:move-to-name-part ()
+(defun direx:goto-item-for-tree-1 (tree)
+  (goto-char (point-min))
+  (loop for item = (direx:item-at-point)
+        for item-tree = (and item (direx:item-tree item))
+        while item-tree
+        if (direx:tree-equals item-tree tree)
+        return (direx:move-to-item-name-part)
+        else if (and (typep item-tree 'direx:node)
+                     (direx:node-contains item-tree tree))
+        do (direx:down-item)
+        else
+        do (direx:next-sibling-item)
+        finally (error "Item not found")))
+
+(defun direx:goto-item-for-tree (tree)
+  (let ((point (point)))
+    (condition-case error
+        (direx:goto-item-for-tree-1 tree)
+      (error (goto-char point)))))
+
+
+
+;;; Major Mode
+
+(defun direx:ensure-item-visible (item))
+
+(defun direx:move-to-item-name-part ()
   (direx:awhen (direx:item-at-point)
-    (goto-char (+ (line-beginning-position)
-                  (direx:item-name-part-offset it)))
-    (direx:ensure-name-part-visible)))
+    (goto-char (+ (line-beginning-position) (direx:item-name-part-offset it)))
+    (direx:ensure-item-visible it)))
 
-(defun direx:next-node ()
-  (interactive)
-  (next-line)
-  (direx:move-to-name-part))
+(defun direx:next-item (&optional arg)
+  (interactive "p")
+  (next-line arg)
+  (direx:move-to-item-name-part))
 
-(defun direx:previous-node ()
-  (interactive)
-  (previous-line)
-  (direx:move-to-name-part))
+(defun direx:previous-item (&optional arg)
+  (interactive "p")
+  (direx:next-item (if (or (null arg) (> arg 0)) -1 1)))
 
-(defun direx:up-node ()
+(defun direx:up-item-1 (item)
+  (loop with parent = (direx:item-parent item)
+        while (and (zerop (forward-line -1))
+                   (not (eq (direx:item-at-point) parent)))
+        finally (direx:move-to-item-name-part)))
+
+(defun direx:up-item ()
   (interactive)
   (direx:aif (direx:item-at-point)
-      (loop with parent = (direx:item-parent it)
-            while (and (zerop (forward-line -1))
-                       (not (eq (direx:item-at-point) parent)))
-            finally (direx:move-to-name-part))
+      (direx:up-item-1 it)
     (goto-char (point-min))))
 
-(defun direx:down-node ()
+(defun direx:down-item ()
   (interactive)
-  (direx:aif (direx:item-at-point)
-      (if (direx:item-leaf-p it)
-          (error "No children")
-        (unless (direx:item-open it)
-          (direx:item-expand it))
-        (if (direx:item-children it)
-            (direx:next-node)
-          (error "No children")))
-    (direx:next-node)))
+  (direx:awhen (direx:item-at-point)
+    (unless (direx:item-node-p it) (error "No children"))
+    (direx:item-ensure-open it)
+    (unless (direx:item-children it) (error "No children")))
+  (direx:next-item))
 
-(defun direx:next-sibling (&optional arg)
+(defun direx:next-sibling-item-1 (item arg)
+  (loop with parent = (direx:item-parent item)
+        with siblings = (when parent (direx:item-children parent))
+        with ordered-siblings = (if (plusp arg) siblings (reverse siblings))
+        with sibling = (second (memq item ordered-siblings))
+        with point = (point)
+        with item
+        while (and sibling
+                   (zerop (forward-line arg))
+                   (setq item (direx:item-at-point)))
+        if (eq item sibling)
+        return (direx:move-to-item-name-part)
+        finally
+        (goto-char point)
+        (error "No sibling")))
+
+(defun direx:next-sibling-item (&optional arg)
   (interactive "p")
   (setq arg (if (or (null arg) (> arg 0)) 1 -1))
   (direx:aif (direx:item-at-point)
-      (let* ((parent (direx:item-parent it))
-             (siblings (when parent (direx:item-children parent)))
-             (siblings (if (plusp arg) siblings (reverse siblings)))
-             (sibling (second (memq it siblings))))
-        (loop with point = (point)
-              with item
-              while (and sibling
-                         (zerop (forward-line arg))
-                         (setq item (direx:item-at-point)))
-              if (eq item sibling)
-              return (direx:move-to-name-part)
-              finally
-              (goto-char point)
-              (error "No sibling")))
-    (if (> arg 0)
-        (direx:next-node)
-      (direx:previous-node))))
+      (direx:next-sibling-item-1 it arg)
+    (direx:next-item arg)))
 
-(defun direx:previous-sibling (&optional arg)
+(defun direx:previous-sibling-item (&optional arg)
   (interactive "p")
-  (direx:next-sibling (if (or (null arg) (> arg 0)) -1 1)))
+  (direx:next-sibling-item (if (or (null arg) (> arg 0)) -1 1)))
 
-(defun direx:goto-node (node)
-  (let ((point (point)))
-    (goto-char (point-min))
-    (condition-case error
-        (loop for item = (direx:item-at-point)
-              for item-node = (and item (direx:item-node item))
-              while item-node
-              if (direx:node-equal item-node node)
-              return (direx:move-to-name-part)
-              else if (direx:node-contain-p item-node node)
-              do (if (direx:node-leaf-p item-node)
-                     (return (direx:move-to-name-part))
-                   (direx:down-node))
-              else
-              do (direx:next-sibling)
-              finally (goto-char point))
-      (error (goto-char point)))))
-
-(defun direx:find-node (&optional item)
+(defun direx:refresh-whole-tree (&optional item)
   (interactive)
-  (direx:awhen (or item (direx:item-at-point))
-    (direx:item-action it :find-node)))
+  (setq item (or item (direx:item-at-point!)))
+  (direx:item-refresh (direx:item-root item) :recursive t)
+  (direx:move-to-item-name-part))
 
-(defun direx:find-node-other-window (&optional item)
+(defun direx:find-item (&optional item)
   (interactive)
-  (direx:awhen (or item (direx:item-at-point))
-    (direx:item-action it :find-node-other-window)))
+  (setq item (or item (direx:item-at-point!)))
+  (direx:generic-find-item item nil))
 
-(defun direx:maybe-find-node (&optional item)
+(defun direx:find-item-other-window (&optional item)
   (interactive)
-  (direx:awhen (or item (direx:item-at-point))
-    (if (direx:item-leaf-p it)
-        (direx:item-action it :find-node)
-      (direx:item-toggle it)
-      (direx:move-to-name-part))))
+  (setq item (or item (direx:item-at-point!)))
+  (direx:generic-find-item item t))
 
-(defun direx:refresh-tree (&optional item)
+(defun direx:maybe-find-item (&optional item)
   (interactive)
-  (direx:awhen (or item (direx:item-at-point))
-    (direx:item-refresh (direx:item-root it) :recursive t)))
+  (setq item (or item (direx:item-at-point!)))
+  (if (direx:item-leaf-p item)
+      (direx:find-item item)
+    (direx:item-toggle item)
+    (direx:move-to-item-name-part)))
+
+(defun direx:toggle-item ()
+  (interactive)
+  (direx:item-toggle (direx:item-at-point!))
+  (direx:move-to-item-name-part))
 
 (defun direx:mouse-1 (event)
   (interactive "e")
   (direx:awhen (direx:item-at-event event)
-    (direx:maybe-find-node it)))
+    (direx:maybe-find-item it)))
 
 (defun direx:mouse-2 (event)
   (interactive "e")
   (direx:awhen (direx:item-at-event event)
-    (direx:find-node-other-window it)))
+    (direx:find-item-other-window it)))
+
+(defvar direx:direx-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "n")           'direx:next-item)
+    (define-key map (kbd "C-n")         'direx:next-item)
+    (define-key map (kbd "<down>")      'direx:next-item)
+    (define-key map (kbd "p")           'direx:previous-item)
+    (define-key map (kbd "C-p")         'direx:previous-item)
+    (define-key map (kbd "<up>")        'direx:previous-item)
+    (define-key map (kbd "C-M-n")       'direx:next-sibling-item)
+    (define-key map (kbd "C-M-<down>")  'direx:next-sibling-item)
+    (define-key map (kbd "C-M-p")       'direx:previous-sibling-item)
+    (define-key map (kbd "C-M-<up>")    'direx:previous-sibling-item)
+    (define-key map (kbd "^")           'direx:up-item)
+    (define-key map (kbd "C-M-u")       'direx:up-item)
+    (define-key map (kbd "C-M-<left>")  'direx:up-item)
+    (define-key map (kbd "C-M-d")       'direx:down-item)
+    (define-key map (kbd "C-M-<right>") 'direx:up-item)
+    (define-key map (kbd "f")           'direx:find-item)
+    (define-key map (kbd "o")           'direx:find-item-other-window)
+    (define-key map (kbd "RET")         'direx:maybe-find-item)
+    (define-key map (kbd "TAB")         'direx:toggle-item)
+    (define-key map (kbd "q")           'quit-window)
+    (define-key map (kbd "g")           'direx:refresh-whole-tree)
+    (define-key map [mouse-1]           'direx:mouse-1)
+    (define-key map [mouse-2]           'direx:mouse-2)
+    map))
 
 (define-derived-mode direx:direx-mode nil "Direx"
   ""
@@ -601,7 +700,7 @@ mouse-2: find this node in other window"))
 
 (defun direx:find-directory-noselect (dirname)
   (interactive "DDirex (directory): ")
-  (direx:ensure-buffer-for-root (direx:make-dirnode dirname)))
+  (direx:ensure-buffer-for-root (direx:make-directory dirname)))
 
 (defun direx:find-directory (dirname)
   (interactive "DDirex (directory): ")
@@ -615,8 +714,8 @@ mouse-2: find this node in other window"))
   (interactive "DDirex (directory): ")
   (loop for current-dirname = dirname then parent-dirname
         for parent-dirname in (direx:directory-parents dirname)
-        for dirnode = (direx:make-dirnode current-dirname)
-        for buffer = (direx:find-buffer-for-root dirnode)
+        for dir = (direx:make-directory current-dirname)
+        for buffer = (direx:find-buffer-for-root dir)
         if buffer return buffer
         finally return (direx:find-directory-noselect dirname)))
 
@@ -628,20 +727,19 @@ mouse-2: find this node in other window"))
   (interactive "DDirex (directory): ")
   (switch-to-buffer-other-window (direx:find-directory-reuse-noselect dirname)))
 
-(defun direx:maybe-goto-current-node-in-directory (buffer)
+(defun direx:maybe-goto-current-buffer-item (buffer)
   (let ((filename buffer-file-name)
         (dirname default-directory))
     (with-current-buffer buffer
-      (ignore-errors
-        (cond (filename
-               (direx:goto-node (direx:make-filenode filename)))
-              (dirname
-               (direx:goto-node (direx:make-dirnode dirname))))))))
+      (cond (filename
+             (direx:goto-item-for-tree (direx:make-regular-file filename)))
+            (dirname
+             (direx:goto-item-for-tree (direx:make-directory dirname)))))))
 
 (defun direx:jump-to-directory-noselect ()
   (interactive)
   (let ((buffer (direx:find-directory-reuse-noselect default-directory)))
-    (direx:maybe-goto-current-node-in-directory buffer)
+    (direx:maybe-goto-current-buffer-item buffer)
     buffer))
 
 (defun direx:jump-to-directory ()

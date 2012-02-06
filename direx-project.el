@@ -34,8 +34,8 @@
 
 (defcustom direx-project:project-root-predicate-functions
   '(direx-project:git-root-p)
-  "List of functions which predicate whether the directory is a
-project root or not."
+  "The list of functions which predicate whether the directory is
+a project root or not."
   :type '(repeat function)
   :group 'direx-project)
 
@@ -51,22 +51,17 @@ project root or not."
   (loop for parent-dirname in (direx:directory-parents (or buffer-file-name default-directory))
         if (direx-project:project-root-p parent-dirname)
         return (let ((buffer (direx:find-directory-noselect parent-dirname)))
-                 (direx:maybe-goto-current-node-in-directory buffer)
-                 buffer)))
+                 (direx:maybe-goto-current-buffer-item buffer)
+                 buffer)
+        finally (error "Project root not found")))
 
 (defun direx-project:jump-to-project-root ()
   (interactive)
-  (let ((buffer (direx-project:jump-to-project-root-noselect)))
-    (if buffer
-        (switch-to-buffer buffer)
-      (error "Project root not found"))))
+  (switch-to-buffer (direx-project:jump-to-project-root-noselect)))
 
 (defun direx-project:jump-to-project-root-other-window ()
   (interactive)
-  (let ((buffer (direx-project:jump-to-project-root-noselect)))
-    (if buffer
-        (switch-to-buffer-other-window buffer)
-      (error "Project root not found"))))
+  (switch-to-buffer-other-window (direx-project:jump-to-project-root-noselect)))
 
 (provide 'direx-project)
 ;;; direx-project.el ends here
