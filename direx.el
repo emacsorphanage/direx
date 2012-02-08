@@ -97,6 +97,16 @@
         while (and parent-dirname (< (length parent-dirname) (length current-dirname)))
         collect parent-dirname))
 
+(defmacro direx:save-excursion-from-error (&rest body)
+  (let ((point (gensym "point"))
+        (error (gensym "error")))
+    `(let ((,point (point)))
+       (condition-case ,error
+           (progn ,@body)
+         (error
+          (goto-char ,point)
+          (signal (car ,error) (cdr ,error)))))))
+
 
 
 ;;; Trees
@@ -549,10 +559,9 @@ mouse-2: find this node in other window"))
         finally (error "Item not found")))
 
 (defun direx:goto-item-for-tree (tree)
-  (let ((point (point)))
-    (condition-case error
-        (direx:goto-item-for-tree-1 tree)
-      (error (goto-char point)))))
+  (ignore-errors
+    (direx:save-excursion-from-error
+     (direx:goto-item-for-tree-1 tree))))
 
 
 
