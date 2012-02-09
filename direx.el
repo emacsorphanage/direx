@@ -363,9 +363,10 @@ mouse-2: find this node in other window"))
   ((full-name :initarg :full-name
               :accessor direx:file-full-name)))
 
-(defmethod direx:tree-equals ((x direx:file) (y direx:file))
+(defmethod direx:tree-equals ((x direx:file) y)
   (or (eq x y)
-      (equal (direx:file-full-name x) (direx:file-full-name y))))
+      (and (typep y 'direx:file)
+           (equal (direx:file-full-name x) (direx:file-full-name y)))))
 
 (defclass direx:regular-file (direx:file direx:leaf)
   ())
@@ -396,9 +397,10 @@ mouse-2: find this node in other window"))
         else
         collect (direx:make-regular-file filename)))
 
-(defmethod direx:node-contains ((dir direx:directory) (file direx:file))
-  (direx:starts-with (direx:file-full-name file)
-                     (direx:file-full-name dir)))
+(defmethod direx:node-contains ((dir direx:directory) file)
+  (and (typep file 'direx:file)
+       (direx:starts-with (direx:file-full-name file)
+                          (direx:file-full-name dir))))
 
 ;; Tree Items
 
