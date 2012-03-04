@@ -493,6 +493,8 @@ mouse-2: find this node in other window"))
 
 ;;; Tree Buffers
 
+(defvar direx:root-item nil)
+
 (defun direx:item-at-point (&optional point)
   (get-char-property (or point (point)) 'direx:item))
 
@@ -578,7 +580,8 @@ mouse-2: find this node in other window"))
 
 (defun direx:next-item (&optional arg)
   (interactive "p")
-  (next-line arg)
+  (unless (zerop (forward-line arg))
+    (error (if (plusp arg) "End of buffer" "Beginning of buffer")))
   (direx:move-to-item-name-part))
 
 (defun direx:previous-item (&optional arg)
