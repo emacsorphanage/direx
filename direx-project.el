@@ -33,14 +33,15 @@
   :prefix "direx-project:")
 
 (defcustom direx-project:project-root-predicate-functions
-  '(direx-project:git-root-p)
+  '(direx-project:vc-root-p)
   "The list of functions which predicate whether the directory is
 a project root or not."
   :type '(repeat function)
   :group 'direx-project)
 
-(defun direx-project:git-root-p (dirname)
-  (file-exists-p (expand-file-name ".git" dirname)))
+(defun direx-project:vc-root-p (dirname)
+  (loop for vc-dir in '(".git" ".hg" ".bzr")
+        thereis (file-exists-p (expand-file-name vc-dir dirname))))
 
 (defun direx-project:project-root-p (dirname)
   (some (lambda (fun) (funcall fun dirname))
