@@ -521,10 +521,12 @@ mouse-2: find this node in other window"))
   (direx:find-root-item-if
    (lambda (item) (direx:tree-equals root (direx:item-tree item)))))
 
+(defun direx:buffer-live-p (buffer)
+  (and (buffer-live-p buffer)
+       (eq (buffer-local-value 'major-mode buffer) 'direx:direx-mode)))
+
 (defun direx:buffer-list ()
-  (loop for buffer in (buffer-list)
-        if (eq (buffer-local-value 'major-mode buffer) 'direx:direx-mode)
-        collect buffer))
+  (remove-if-not 'direx:buffer-live-p (buffer-list)))
 
 (defun direx:make-buffer (name)
   (let ((buffer (generate-new-buffer name)))
