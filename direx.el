@@ -60,10 +60,12 @@
   (declare (indent 1))
   `(let ((it ,test)) (when it ,@body)))
 
-(defun direx:partial (fun &rest args)
-  (lexical-let ((fun fun) (args args))
-    (lambda (&rest restargs)
-      (apply fun (append args restargs)))))
+(defun direx:apply-partially (fun &rest args)
+  (if (fboundp 'apply-partially)
+      (apply 'apply-partially fun args)
+    (lexical-let ((fun fun) (args args))
+      (lambda (&rest restargs)
+        (apply fun (append args restargs))))))
 
 (defun direx:starts-with (x y)
   (and (<= (length y) (length x))
@@ -333,7 +335,7 @@ mouse-2: find this node in other window"))
     (loop with point = (overlay-end (direx:item-overlay item))
           with old-children = (direx:item-children item)
           for new-child in (direx:make-item-children item)
-          for old-child = (find-if (direx:partial 'direx:item-equals new-child)
+          for old-child = (find-if (direx:apply-partially 'direx:item-equals new-child)
                                    old-children)
           if old-child
           do (setq new-child old-child
@@ -512,7 +514,7 @@ mouse-2: find this node in other window"))
 
 (defun direx:find-root-item-if (predicate)
   (find-if predicate
-           (mapcar (direx:partial 'buffer-local-value 'direx:root-item)
+           (mapcar (direx:apply-partially 'buffer-local-value 'direx:root-item)
                    (direx:buffer-list))))
 
 (defun direx:find-root-item-for-root (root)
