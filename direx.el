@@ -27,6 +27,7 @@
 (require 'cl)
 (require 'eieio)
 (require 'dired)
+(require 'regexp-opt)
 
 (defgroup direx nil
   "Directory Explorer."
@@ -44,6 +45,12 @@
   :group 'direx)
 
 (defcustom direx:closed-icon "[+]"
+  ""
+  :type 'string
+  :group 'direx)
+
+(defcustom direx:ignored-files-regexp
+  (concat "\\(?:" (regexp-opt completion-ignored-extensions) "\\|#\\)$")
   ""
   :type 'string
   :group 'direx)
@@ -473,10 +480,14 @@ mouse-2: find this node in other window"))
       (find-file filename))))
 
 (defmethod direx:make-item ((file direx:regular-file) parent)
-  (make-instance 'direx:regular-file-item
-                 :tree file
-                 :parent parent
-                 :keymap direx:file-keymap))
+  (let* ((filename (direx:file-full-name file))
+         (face (when (string-match direx:ignored-files-regexp filename)
+                 'dired-ignored)))
+    (make-instance 'direx:regular-file-item
+                   :tree file
+                   :parent parent
+                   :face face
+                   :keymap direx:file-keymap)))
 
 (defclass direx:directory-item (direx:file-item)
   ())
