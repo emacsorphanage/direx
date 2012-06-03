@@ -49,7 +49,9 @@ a project root or not."
 
 (defun direx-project:jump-to-project-root-noselect ()
   (interactive)
-  (loop for parent-dirname in (direx:directory-parents (or buffer-file-name default-directory))
+  (loop for parent-dirname in (cond (buffer-file-name (direx:directory-parents buffer-file-name))
+                                    (default-directory (cons default-directory
+                                                             (direx:directory-parents default-directory))))
         if (direx-project:project-root-p parent-dirname)
         return (let ((buffer (direx:find-directory-noselect parent-dirname)))
                  (direx:maybe-goto-current-buffer-item buffer)
