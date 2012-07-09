@@ -539,13 +539,15 @@ mouse-2: find this node in other window"))
 (defun direx:buffer-list ()
   (remove-if-not 'direx:buffer-live-p (buffer-list)))
 
-(defun direx:make-buffer (name)
-  (let ((buffer (generate-new-buffer name)))
-    (with-current-buffer buffer (direx:direx-mode))
+(defun direx:make-buffer (root)
+  (let ((buffer (generate-new-buffer (direx:tree-name root))))
+    (with-current-buffer buffer
+      (direx:direx-mode)
+      (setq default-directory (direx:file-full-name root)))
     buffer))
 
 (defun direx:make-buffer-for-root (root)
-  (let ((buffer (direx:make-buffer (direx:tree-name root))))
+  (let ((buffer (direx:make-buffer root)))
     (direx:add-root-into-buffer root buffer)
     buffer))
 
