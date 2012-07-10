@@ -47,16 +47,23 @@ a project root or not."
   (some (lambda (fun) (funcall fun dirname))
         direx-project:project-root-predicate-functions))
 
+(defun direx-project:find-project-root-noselect (filename)
+  (interactive)
+  (loop for parent-dirname in (if (file-directory-p filename)
+                                  (cons filename
+                                        (direx:directory-parents filename))
+                                (direx:directory-parents filename))
+        if (direx-project:project-root-p parent-dirname)
+        return (direx:find-directory-noselect parent-dirname)))
+
 (defun direx-project:jump-to-project-root-noselect ()
   (interactive)
-  (loop for parent-dirname in (cond (buffer-file-name (direx:directory-parents buffer-file-name))
-                                    (default-directory (cons default-directory
-                                                             (direx:directory-parents default-directory))))
-        if (direx-project:project-root-p parent-dirname)
-        return (let ((buffer (direx:find-directory-noselect parent-dirname)))
-                 (direx:maybe-goto-current-buffer-item buffer)
-                 buffer)
-        finally (error "Project root not found")))
+  (let ((buffer (direx-project:find-project-root-noselect
+                 (or buffer-file-name default-directory))))
+    (if buffer
+        (direx:maybe-goto-current-buffer-item buffer)
+      (error "Project root not found"))
+    buffer))
 
 (defun direx-project:jump-to-project-root ()
   (interactive)
