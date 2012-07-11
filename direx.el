@@ -174,6 +174,8 @@ descendants. You may add a heuristic method for speed.")
 
 (defgeneric direx:generic-find-item (item not-this-window))
 
+(defgeneric direx:generic-display-item (item))
+
 (defgeneric direx:make-item (tree parent)
   "Returns a item of the TREE.")
 
@@ -479,6 +481,10 @@ mouse-2: find this node in other window"))
         (find-file-other-window filename)
       (find-file filename))))
 
+(defmethod direx:generic-display-item ((item  direx:regular-file-item))
+  (let ((filename (direx:file-full-name (direx:item-tree item))))
+    (display-buffer (find-file-noselect filename))))
+
 (defmethod direx:make-item ((file direx:regular-file) parent)
   (let* ((filename (direx:file-full-name file))
          (face (when (string-match direx:ignored-files-regexp filename)
@@ -497,6 +503,10 @@ mouse-2: find this node in other window"))
     (if not-this-window
         (dired-other-window dirname)
       (dired dirname))))
+
+(defmethod direx:generic-display-item ((item  direx:directory-item))
+  (let ((dirname (direx:file-full-name (direx:item-tree item))))
+    (display-buffer (dired-noselect dirname))))
 
 (defmethod direx:make-item ((dir direx:directory) parent)
   (make-instance 'direx:directory-item
@@ -674,6 +684,12 @@ mouse-2: find this node in other window"))
   (setq item (or item (direx:item-at-point!)))
   (direx:generic-find-item item t))
 
+(defun direx:display-item (&optional item)
+  "Open ITEM at point without changing focus."
+  (interactive)
+  (setq item (or item (direx:item-at-point!)))
+  (direx:generic-display-item item))
+
 (defun direx:maybe-find-item (&optional item)
   (interactive)
   (setq item (or item (direx:item-at-point!)))
@@ -717,6 +733,7 @@ mouse-2: find this node in other window"))
     (define-key map (kbd "C-M-<right>") 'direx:up-item)
     (define-key map (kbd "f")           'direx:find-item)
     (define-key map (kbd "o")           'direx:find-item-other-window)
+    (define-key map (kbd "C-o")         'direx:display-item)
     (define-key map (kbd "RET")         'direx:maybe-find-item)
     (define-key map (kbd "TAB")         'direx:toggle-item)
     (define-key map (kbd "i")           'direx:toggle-item)
