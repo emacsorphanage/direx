@@ -203,6 +203,15 @@ descendants. You may add a heuristic method for speed.")
       (1+ (direx:item-depth it))
     0))
 
+(defun direx:item-start (item)
+  (overlay-start (direx:item-overlay item)))
+
+(defun direx:item-end (item)
+  (let ((children (direx:item-children item)))
+    (if children
+        (direx:item-end (car (last children)))
+      (overlay-end (direx:item-overlay item)))))
+
 (defun direx:item-root (item)
   (direx:aif (direx:item-parent item)
       (direx:item-root it)
@@ -353,7 +362,7 @@ mouse-2: find this node in other window"))
           do (save-excursion
                (goto-char point)
                (direx:item-insert new-child))
-          do (setq point (overlay-end (direx:item-overlay new-child)))
+          do (setq point (direx:item-end new-child))
           collect new-child into new-children
           finally
           (dolist (old-child old-children)
@@ -604,10 +613,12 @@ mouse-2: find this node in other window"))
 (defun direx:ensure-item-visible (item))
 
 (defun direx:move-to-item-name-part (&optional item)
-  (direx:awhen (or item (direx:item-at-point))
-    (goto-char (+ (overlay-start (direx:item-overlay it))
-                  (direx:item-name-part-offset it)))
-    (direx:ensure-item-visible it)))
+  (unless item
+    (setq item (direx:item-at-point)))
+  (when (and item (direx:item-start item))
+    (goto-char (+ (direx:item-start item)
+                  (direx:item-name-part-offset item)))
+    (direx:ensure-item-visible item)))
 
 (defun direx:next-item (&optional arg)
   (interactive "p")
