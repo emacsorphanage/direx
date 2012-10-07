@@ -481,7 +481,7 @@ mouse-2: find this node in other window"))
         (find-file-other-window filename)
       (find-file filename))))
 
-(defmethod direx:generic-display-item ((item  direx:regular-file-item))
+(defmethod direx:generic-display-item ((item direx:regular-file-item))
   (let ((filename (direx:file-full-name (direx:item-tree item))))
     (display-buffer (find-file-noselect filename))))
 
@@ -504,7 +504,7 @@ mouse-2: find this node in other window"))
         (dired-other-window dirname)
       (dired dirname))))
 
-(defmethod direx:generic-display-item ((item  direx:directory-item))
+(defmethod direx:generic-display-item ((item direx:directory-item))
   (let ((dirname (direx:file-full-name (direx:item-tree item))))
     (display-buffer (dired-noselect dirname))))
 
