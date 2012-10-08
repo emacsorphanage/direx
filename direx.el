@@ -292,7 +292,7 @@ mouse-2: find this node in other window"))
     (save-excursion
       ;; Insert the icon carefully with consideration of the
       ;; front-advance overlay.
-      (goto-char (+ (line-beginning-position)
+      (goto-char (+ (direx:item-start item)
                     (direx:item-name-part-offset item)))
       (insert new-icon)
       ;; Then delete the icon.
@@ -578,14 +578,16 @@ mouse-2: find this node in other window"))
   (direx:awhen (direx:find-root-item-for-root root)
     (direx:item-buffer it)))
 
-(defun direx:add-root-into-buffer (root buffer)
+(defun direx:add-root-into-buffer (root buffer &optional noexpand)
   (with-current-buffer buffer
-    (save-excursion
-      (let ((root-item (direx:make-item root nil))
-            (buffer-read-only nil))
-        (goto-char (point-max))
-        (direx:item-insert root-item)
-        (setq direx:root-item root-item)))))
+    (let ((root-item (direx:make-item root nil))
+          (buffer-read-only nil))
+      (goto-char (point-max))
+      (direx:item-insert root-item)
+      (setq direx:root-item root-item)
+      (unless noexpand
+        (direx:item-expand root-item)
+        (direx:move-to-item-name-part root-item)))))
 
 (defun direx:goto-item-for-tree-1 (tree)
   (goto-char (point-min))
