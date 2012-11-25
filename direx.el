@@ -562,12 +562,20 @@ mouse-2: find this node in other window"))
 (defun direx:buffer-list ()
   (remove-if-not 'direx:buffer-live-p (buffer-list)))
 
-(defun direx:make-buffer (root)
+(defgeneric direx:make-buffer (root))
+
+(defmethod direx:make-buffer ((root direx:tree))
   (let ((buffer (generate-new-buffer (direx:tree-name root))))
     (with-current-buffer buffer
       (direx:direx-mode)
       (setq default-directory (direx:file-full-name root)))
     buffer))
+
+(defmethod direx:make-buffer ((dir direx:directory))
+  (with-current-buffer (call-next-method)
+    (set (make-local-variable 'dired-directory)
+         (direx:file-full-name dir))
+    (current-buffer)))
 
 (defun direx:make-buffer-for-root (root)
   (let ((buffer (direx:make-buffer root)))
