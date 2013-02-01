@@ -441,6 +441,8 @@ mouse-2: find this node in other window"))
     (define-key map (kbd "D") 'direx:do-delete-files)
     (define-key map (kbd "+") 'direx:create-directory)
     (define-key map (kbd "M") 'direx:do-chmod-file)
+    (define-key map (kbd "L") 'direx:do-load-file)
+    (define-key map (kbd "B") 'direx:do-byte-compile-file)
     map))
 
 (defun direx:do-rename-file ()
@@ -497,6 +499,38 @@ mouse-2: find this node in other window"))
                         (string-to-number modes 8)
                       (file-modes-symbolic-to-number modes orig-modes))))
     (set-file-modes filename new-modes)))
+
+(defun direx:do-load-file ()
+  (interactive)
+  (let* ((item (direx:item-at-point!))
+         (file (direx:item-tree item))
+         (filename (direx:file-full-name file))
+         (failure nil))
+    (when (y-or-n-p (format "Load %s?" (file-name-nondirectory filename)))
+      (condition-case err
+          (load filename nil nil t)
+        (error (setq failure err)))
+      (when failure
+        (message "Load error for %s:\n%s\n" file failure)))))
+
+(defun direx:do-byte-compile-file ()
+  (interactive)
+  (let* ((item (direx:item-at-point!))
+         (file (direx:item-tree item))
+         (filename (direx:file-full-name file))
+         (dest-file (byte-compile-dest-file filename))
+         (failure nil))
+    (when (y-or-n-p (format "Byte-Compile %s?" (file-name-nondirectory filename)))
+      (condition-case err
+          (save-excursion (byte-compile-file filename))
+        (error (setq failure err)))
+      (or (file-exists-p dest-file)
+          (setq failure t))
+      (if failure
+          (error "Byte compile error for %s\n%s\n" filename failure)
+        (progn
+          (direx:item-refresh-parent item)
+          (direx:next-item))))))
 
 (defclass direx:regular-file-item (direx:file-item)
   ())
