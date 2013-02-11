@@ -446,6 +446,7 @@ mouse-2: find this node in other window"))
     (define-key map (kbd "G") 'direx:do-chgrp)
     (define-key map (kbd "O") 'direx:do-chown)
     (define-key map (kbd "T") 'direx:do-touch)
+    (define-key map (kbd "E") 'direx:echo-item)
     map))
 
 (defun direx:do-rename-file ()
@@ -543,6 +544,10 @@ mouse-2: find this node in other window"))
       (message "%s" (replace-regexp-in-string "[\r\n]+\\'" ""
                                               (buffer-string))))))
 
+(defun direx:echo-item ()
+  (interactive)
+  (direx:item-echo (direx:item-at-point)))
+
 (defun direx:do-chxxx (program attr filename)
   (let* ((prompt (format "Change %s of %s to: "
                          attr (file-name-nondirectory filename)))
@@ -578,6 +583,22 @@ mouse-2: find this node in other window"))
                    (list filename)
                  (list "-t" new-time filename))))
     (direx:exec-command "touch" args)))
+
+(defgeneric direx:item-echo (item))
+
+(defmethod direx:item-echo ((item direx:file-item))
+  (let* ((filename (direx:file-full-name (direx:item-tree item)))
+         (dired-actual-switches "-la")
+         (file-list (list (if (direx:regular-file-item-p item)
+                              (file-name-nondirectory filename)
+                            (direx:directory-basename filename))))
+         (default-directory (direx:directory-dirname filename)))
+    (with-temp-buffer
+      (dired-insert-directory default-directory
+                              dired-actual-switches
+                              file-list)
+      (goto-char (point-min))
+      (message "%s" (buffer-substring (point) (line-end-position))))))
 
 (defclass direx:regular-file-item (direx:file-item)
   ())
