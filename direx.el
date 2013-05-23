@@ -809,13 +809,12 @@ mouse-2: find this node in other window"))
     (define-key map (kbd "RET")         'direx:maybe-find-item)
     (define-key map (kbd "TAB")         'direx:toggle-item)
     (define-key map (kbd "i")           'direx:toggle-item)
-    (define-key map (kbd "q")           'quit-window)
     (define-key map (kbd "g")           'direx:refresh-whole-tree)
     (define-key map [mouse-1]           'direx:mouse-1)
     (define-key map [mouse-2]           'direx:mouse-2)
     map))
 
-(define-derived-mode direx:direx-mode nil "Direx"
+(define-derived-mode direx:direx-mode special-mode "Direx"
   ""
   (set (make-local-variable 'direx:root-item) nil)
   (setq buffer-read-only t
