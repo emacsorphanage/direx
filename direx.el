@@ -351,7 +351,7 @@ mouse-2: find this node in other window"))
       (direx:item-collapse item)
     (direx:item-expand item)))
 
-(defun* direx:item-refresh (item &key recursive)
+(defmethod direx:item-refresh ((item direx:item) &key recursive)
   (when (and (not (direx:item-leaf-p item))
              (direx:item-children item))
     (loop with point = (overlay-end (direx:item-overlay item))
