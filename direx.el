@@ -278,17 +278,19 @@ mouse-2: find this node in other window"))
   (unless (direx:item-children item)
     (direx:item-insert-children item)))
 
-(defun* direx:item-delete (item &key recursive)
+(defun* direx:item-delete (item)
   (let* ((overlay (direx:item-overlay item))
          (start (overlay-start overlay))
          (end (overlay-end overlay))
          (buffer-read-only nil))
     (delete-region start end)
-    (delete-overlay overlay)
-    (when (and recursive
-               (not (direx:item-leaf-p item)))
-      (dolist (child (direx:item-children item))
-        (direx:item-delete child :recursive t)))))
+    (delete-overlay overlay)))
+
+(defun direx:item-delete-recursively (item)
+  (direx:item-delete item)
+  (unless (direx:item-leaf-p item)
+    (dolist (child (direx:item-children item))
+      (direx:item-delete-recursively child))))
 
 (defun direx:item-change-icon (item new-icon)
   (let ((buffer-read-only nil))
@@ -351,7 +353,7 @@ mouse-2: find this node in other window"))
       (direx:item-collapse item)
     (direx:item-expand item)))
 
-(defmethod direx:item-refresh ((item direx:item) &key recursive)
+(defmethod direx:item-refresh ((item direx:item))
   (when (and (not (direx:item-leaf-p item))
              (direx:item-children item))
     (loop with point = (overlay-end (direx:item-overlay item))
@@ -370,15 +372,17 @@ mouse-2: find this node in other window"))
           collect new-child into new-children
           finally
           (dolist (old-child old-children)
-            (direx:item-delete old-child :recursive t))
-          (setf (direx:item-children item) new-children)
-          (when recursive
-            (dolist (new-child new-children)
-              (direx:item-refresh new-child :recursive t))))))
+            (direx:item-delete-recursively old-child))
+          (setf (direx:item-children item) new-children))))
+
+(defun direx:item-refresh-recursively (item)
+  (direx:item-refresh item)
+  (dolist (child (direx:item-children item))
+    (direx:item-refresh-recursively child)))
 
 (defun* direx:item-refresh-parent (item &key recursive)
   (direx:awhen (direx:item-parent item)
-    (direx:item-refresh it :recursive recursive)))
+    (direx:item-refresh-recursively it)))
 
 
 
@@ -743,13 +747,13 @@ mouse-2: find this node in other window"))
 (defun direx:refresh-tree (&optional item)
   (interactive)
   (setq item (or item (direx:item-at-point!)))
-  (direx:item-refresh item :recursive t)
+  (direx:item-refresh-recursively item)
   (direx:move-to-item-name-part item))
 
 (defun direx:refresh-whole-tree (&optional item)
   (interactive)
   (setq item (or item (direx:item-at-point!)))
-  (direx:item-refresh (direx:item-root item) :recursive t)
+  (direx:item-refresh-recursively (direx:item-root item))
   (direx:move-to-item-name-part item))
 
 (defun direx:find-item (&optional item)
