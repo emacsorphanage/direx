@@ -740,6 +740,12 @@ mouse-2: find this node in other window"))
   (interactive "p")
   (direx:next-sibling-item (if (or (null arg) (> arg 0)) -1 1)))
 
+(defun direx:refresh-tree (&optional item)
+  (interactive)
+  (setq item (or item (direx:item-at-point!)))
+  (direx:item-refresh item :recursive t)
+  (direx:move-to-item-name-part item))
+
 (defun direx:refresh-whole-tree (&optional item)
   (interactive)
   (setq item (or item (direx:item-at-point!)))
