@@ -770,6 +770,18 @@ mouse-2: find this node in other window"))
     (direx:item-toggle item)
     (direx:move-to-item-name-part item)))
 
+(defun direx:expand-item ()
+  (interactive)
+  (let ((item (direx:item-at-point!)))
+    (direx:item-expand item)
+    (direx:move-to-item-name-part item)))
+
+(defun direx:collapse-item ()
+  (interactive)
+  (let ((item (direx:item-at-point!)))
+    (direx:item-collapse item)
+    (direx:move-to-item-name-part item)))
+
 (defun direx:toggle-item ()
   (interactive)
   (let ((item (direx:item-at-point!)))
