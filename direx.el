@@ -903,10 +903,12 @@ mouse-2: find this node in other window"))
     (direx:maybe-goto-current-buffer-item buffer)
     buffer))
 
+;;;###autoload
 (defun direx:jump-to-directory ()
   (interactive)
   (switch-to-buffer (direx:jump-to-directory-noselect)))
 
+;;;###autoload
 (defun direx:jump-to-directory-other-window ()
   (interactive)
   (switch-to-buffer-other-window (direx:jump-to-directory-noselect)))
