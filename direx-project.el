@@ -65,10 +65,12 @@ a project root or not."
       (error "Project root not found"))
     buffer))
 
+;;;###autoload
 (defun direx-project:jump-to-project-root ()
   (interactive)
   (switch-to-buffer (direx-project:jump-to-project-root-noselect)))
 
+;;;###autoload
 (defun direx-project:jump-to-project-root-other-window ()
   (interactive)
   (switch-to-buffer-other-window (direx-project:jump-to-project-root-noselect)))
