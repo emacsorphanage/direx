@@ -700,7 +700,7 @@ mouse-2: find this node in other window"))
 
 (defun direx:previous-item (&optional arg)
   (interactive "p")
-  (direx:next-item (if (or (null arg) (> arg 0)) -1 1)))
+  (direx:next-item (if (null arg) -1 (- arg))))
 
 (defun direx:up-item-1 (item)
   (loop with parent = (direx:item-parent item)
