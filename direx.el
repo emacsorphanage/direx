@@ -58,6 +58,12 @@
   :type 'string
   :group 'direx)
 
+(defcustom direx:ignored-dirs-regexp
+  (concat "^" (regexp-opt '(".svn" ".git" ".hg")) "$")
+  ""
+  :type 'string
+  :group 'direx)
+
 
 
 ;;; Utilities
@@ -338,10 +344,12 @@ mouse-2: find this node in other window"))
   (unless (direx:item-open item)
     (direx:item-expand item)))
 
-(defun direx:item-expand-recursively (item)
-  (direx:item-expand item)
-  (dolist (child (direx:item-children item))
-    (direx:item-expand-recursively child)))
+(defun direx:item-expand-recursively (item &optional noexpand-ignored)
+  (when (or (not noexpand-ignored)
+            (not (eq (direx:item-face item) 'dired-ignored)))
+    (direx:item-expand item)
+    (dolist (child (direx:item-children item))
+      (direx:item-expand-recursively child t))))
 
 (defun direx:item-collapse (item)
   (unless (direx:item-leaf-p item)
@@ -578,11 +586,15 @@ mouse-2: find this node in other window"))
     (display-buffer (dired-noselect dirname))))
 
 (defmethod direx:make-item ((dir direx:directory) parent)
-  (make-instance 'direx:directory-item
-                 :tree dir
-                 :parent parent
-                 :face 'dired-directory
-                 :keymap direx:file-keymap))
+  (let* ((basename (direx:tree-name dir))
+         (face (or (when (string-match direx:ignored-dirs-regexp basename)
+                     'dired-ignored)
+                   'dired-directory)))
+    (make-instance 'direx:directory-item
+                   :tree dir
+                   :parent parent
+                   :face face
+                   :keymap direx:file-keymap)))
 
 
 
