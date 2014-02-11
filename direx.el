@@ -59,7 +59,7 @@
   :group 'direx)
 
 (defcustom direx:ignored-dirs-regexp
-  (concat "^" (regexp-opt '(".svn" ".git" ".hg")) "$")
+  (concat "\\`" (regexp-opt '(".svn" ".git" ".hg")) "\\'")
   ""
   :type 'string
   :group 'direx)
@@ -587,9 +587,9 @@ mouse-2: find this node in other window"))
 
 (defmethod direx:make-item ((dir direx:directory) parent)
   (let* ((basename (direx:tree-name dir))
-         (face (or (when (string-match direx:ignored-dirs-regexp basename)
-                     'dired-ignored)
-                   'dired-directory)))
+         (face (if (string-match direx:ignored-dirs-regexp basename)
+                   'dired-ignored
+                 'dired-directory)))
     (make-instance 'direx:directory-item
                    :tree dir
                    :parent parent
