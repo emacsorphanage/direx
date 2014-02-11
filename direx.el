@@ -726,14 +726,19 @@ mouse-2: find this node in other window"))
   (loop with parent = (direx:item-parent item)
         with siblings = (when parent (direx:item-children parent))
         with ordered-siblings = (if (plusp arg) siblings (reverse siblings))
-        with sibling = (second (memq item ordered-siblings))
+        with next-siblings = (memq item ordered-siblings)
+        with idx = 1
+        with sibling = (nth idx next-siblings)
         with point = (point)
         with item
         while (and sibling
                    (zerop (forward-line arg))
                    (setq item (direx:item-at-point)))
-        if (eq item sibling)
+        if (and (eq item sibling)
+                (direx:item-visible-p item))
         return (direx:move-to-item-name-part item)
+        else if (eq item sibling)
+        do (setq sibling (nth (incf idx) next-siblings))
         finally
         (goto-char point)
         (error "No sibling")))
