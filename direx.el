@@ -29,6 +29,7 @@
 (require 'eieio)
 (require 'dired)
 (require 'regexp-opt)
+(require 'migemo nil t)
 
 (defconst direx:version "0.1alpha")
 
@@ -56,6 +57,11 @@
   (concat "\\(?:" (regexp-opt completion-ignored-extensions) "\\|#\\)$")
   ""
   :type 'string
+  :group 'direx)
+
+(defcustom direx:use-migemo nil
+  "Whether use migemo.el to search item."
+  :type 'boolean
   :group 'direx)
 
 
@@ -389,6 +395,87 @@ mouse-2: find this node in other window"))
   (direx:awhen (direx:item-parent item)
     (direx:item-refresh-recursively it)))
 
+;; Grep
+
+(defvar direx:grep-item-timer nil)
+(defvar direx:grep-item-last-value "")
+(defvar direx:grep-current-use-migemo nil)
+(defvar direx:grep-current-item nil)
+
+(defvar direx:grep-item-map
+  (let ((map (copy-keymap minibuffer-local-map)))
+    (define-key map (kbd "C-g") 'direx:abort-grep-item)
+    map))
+
+(defun direx:abort-grep-item ()
+  (interactive)
+  (direx:stop-grep-item)
+  (unwind-protect
+      (direx:awhen direx:grep-current-item
+        (direx:item-show-children it))
+    (setq direx:grep-current-item nil)
+    (abort-recursive-edit)))
+
+(defun direx:start-grep-item ()
+  (setq direx:grep-item-last-value "")
+  (unless direx:grep-item-timer
+    (setq direx:grep-item-timer
+          (run-with-idle-timer 0.5 t 'direx:grep-item))))
+
+(defun direx:stop-grep-item ()
+  (let ((timer (symbol-value 'direx:grep-item-timer)))
+    (when timer
+      (cancel-timer timer))
+    (setq direx:grep-item-timer nil)))
+
+(defun direx:grep-item ()
+  (let* ((iptvalue (with-selected-window (or (active-minibuffer-window)
+                                             (minibuffer-window))
+                     (minibuffer-contents)))
+         (iptvalue (replace-regexp-in-string "^\\s-+" "" iptvalue))
+         (iptvalue (replace-regexp-in-string "\\s-+$" "" iptvalue))
+         (re-maker (or (when (and direx:grep-current-use-migemo
+                                  (featurep 'migemo))
+                         'migemo-search-pattern-get)
+                       'regexp-quote))
+         (do-update (not (string= iptvalue direx:grep-item-last-value)))
+         (re-list (when (and do-update
+                             (not (string= iptvalue "")))
+                    (mapcar (lambda (s) (funcall re-maker s))
+                            (split-string iptvalue " +"))))
+         (buffer-read-only nil))
+    (when (and do-update
+               direx:grep-current-item)
+      (setq direx:grep-item-last-value iptvalue)
+      (direx:item-show-children direx:grep-current-item)
+      (when re-list
+        (direx:item-grep-recursively direx:grep-current-item re-list)))))
+
+(defun direx:item-grep-recursively (item re-list &optional grep-myself)
+  (let* ((openednode (and (not (direx:item-leaf-p item))
+                          (direx:item-open item)))
+         (leaffound (when openednode
+                      (loop with found = nil
+                            for child in (direx:item-children item)
+                            if (direx:item-grep-recursively child re-list t)
+                            do (setq found t)
+                            finally return found)))
+         (ret (cond
+               ((not grep-myself) t)
+               (leaffound         t)
+               (t                 (loop with selfnm = (direx:tree-name (direx:item-tree item))
+                                        for re in re-list
+                                        if (not (string-match re selfnm))
+                                        return (progn (direx:item-hide item)
+                                                      nil)
+                                        finally return t)))))
+    (when (and openednode
+               (not leaffound)
+               ret)
+      ;; If any leaf is not match but myself is match, show all leaf.
+      (direx:item-show-children item))
+    ret))
+
 
 
 ;;; File System
@@ -658,18 +745,25 @@ mouse-2: find this node in other window"))
         (direx:move-to-item-name-part root-item)))))
 
 (defun direx:goto-item-for-tree-1 (tree)
-  (goto-char (point-min))
-  (loop for item = (direx:item-at-point)
+  (loop with children = (direx:item-children direx:root-item)
+        with idx = -1
+        for item = (nth (incf idx) children)
         for item-tree = (and item (direx:item-tree item))
         while item-tree
         if (direx:tree-equals item-tree tree)
-        return (direx:move-to-item-name-part item)
+        return (progn
+                 (direx:item-show item)
+                 (direx:move-to-item-name-part item))
         else if (and (typep item-tree 'direx:node)
                      (direx:node-contains item-tree tree))
-        do (direx:down-item)
-        else
-        do (direx:next-sibling-item)
-        finally (error "Item not found")))
+        do (progn
+             (direx:item-show item)
+             (direx:item-ensure-open item)
+             (setq children (direx:item-children item))
+             (setq idx -1))
+        finally
+        (goto-char (point-min))
+        (error "Item not found")))
 
 (defun direx:goto-item-for-tree (tree)
   (ignore-errors
@@ -809,6 +903,32 @@ mouse-2: find this node in other window"))
     (direx:expand-item item))
   (direx:move-to-item-name-part item))
 
+(defun direx:search-item (&optional toggle)
+  (interactive "P")
+  (setq direx:grep-current-use-migemo (if toggle
+                                          (not direx:use-migemo)
+                                        direx:use-migemo))
+  (setq direx:grep-current-item (direx:item-at-point!))
+  (let* ((mgmmsg (when (and direx:grep-current-use-migemo
+                            (featurep 'migemo))
+                   "[MIGEMO] "))
+         (prompt (concat mgmmsg "Search: ")))
+    (direx:start-grep-item)
+    (unwind-protect
+        (read-from-minibuffer prompt nil direx:grep-item-map)
+      (direx:stop-grep-item)
+      (setq direx:grep-current-item nil))))
+
+(defun direx:show-all-item-at-point ()
+  (interactive)
+  (direx:show-all-item (direx:item-at-point!)))
+
+(defun direx:show-all-item (&optional item)
+  (interactive)
+  (setq item (or item direx:root-item))
+  (direx:item-show item)
+  (direx:item-show-children item))
+
 (defun direx:mouse-1 (event)
   (interactive "e")
   (direx:awhen (direx:item-at-event event)
@@ -843,6 +963,9 @@ mouse-2: find this node in other window"))
     (define-key map (kbd "TAB")         'direx:toggle-item)
     (define-key map (kbd "i")           'direx:toggle-item)
     (define-key map (kbd "E")           'direx:expand-item-recursively)
+    (define-key map (kbd "s")           'direx:search-item)
+    (define-key map (kbd "a")           'direx:show-all-item-at-point)
+    (define-key map (kbd "A")           'direx:show-all-item)
     (define-key map (kbd "g")           'direx:refresh-whole-tree)
     (define-key map [mouse-1]           'direx:mouse-1)
     (define-key map [mouse-2]           'direx:mouse-2)
