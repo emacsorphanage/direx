@@ -133,6 +133,12 @@
 (defmethod direx:tree-equals (x y)
   (eq x y))
 
+(defgeneric direx:tree-status (tree)
+  "Returns a status of TREE in string.")
+
+(defmethod direx:tree-status (tree)
+  "")
+
 (defclass direx:node (direx:tree)
   ())
 
@@ -404,6 +410,20 @@ mouse-2: find this node in other window"))
       (and (typep y 'direx:file)
            (equal (direx:file-full-name x) (direx:file-full-name y)))))
 
+(defmethod direx:tree-status ((file direx:file))
+  (let* ((filename (direx:file-full-name file))
+         (dired-actual-switches "-la")
+         (file-list (list (if (direx:regular-file-item-p file)
+                              (file-name-nondirectory filename)
+                            (direx:directory-basename filename))))
+         (default-directory (direx:directory-dirname filename)))
+    (with-temp-buffer
+      (dired-insert-directory default-directory
+                              dired-actual-switches
+                              file-list)
+      (goto-char (point-min))
+      (buffer-substring-no-properties (point) (line-end-position)))))
+
 (defclass direx:regular-file (direx:file direx:leaf)
   ())
 
@@ -455,7 +475,6 @@ mouse-2: find this node in other window"))
     (define-key map (kbd "G") 'direx:do-chgrp)
     (define-key map (kbd "O") 'direx:do-chown)
     (define-key map (kbd "T") 'direx:do-touch)
-    (define-key map (kbd "E") 'direx:echo-item)
     map))
 
 (defun direx:do-rename-file ()
@@ -553,10 +572,6 @@ mouse-2: find this node in other window"))
       (message "%s" (replace-regexp-in-string "[\r\n]+\\'" ""
                                               (buffer-string))))))
 
-(defun direx:echo-item ()
-  (interactive)
-  (direx:item-echo (direx:item-at-point)))
-
 (defun direx:do-chxxx (program attr filename)
   (let* ((prompt (format "Change %s of %s to: "
                          attr (file-name-nondirectory filename)))
@@ -592,22 +607,6 @@ mouse-2: find this node in other window"))
                    (list filename)
                  (list "-t" new-time filename))))
     (direx:exec-command "touch" args)))
-
-(defgeneric direx:item-echo (item))
-
-(defmethod direx:item-echo ((item direx:file-item))
-  (let* ((filename (direx:file-full-name (direx:item-tree item)))
-         (dired-actual-switches "-la")
-         (file-list (list (if (direx:regular-file-item-p item)
-                              (file-name-nondirectory filename)
-                            (direx:directory-basename filename))))
-         (default-directory (direx:directory-dirname filename)))
-    (with-temp-buffer
-      (dired-insert-directory default-directory
-                              dired-actual-switches
-                              file-list)
-      (goto-char (point-min))
-      (message "%s" (buffer-substring (point) (line-end-position))))))
 
 (defclass direx:regular-file-item (direx:file-item)
   ())
@@ -823,6 +822,10 @@ mouse-2: find this node in other window"))
   (direx:item-refresh-recursively (direx:item-root item))
   (direx:move-to-item-name-part item))
 
+(defun direx:echo-item ()
+  (interactive)
+  (message "%s" (direx:tree-status (direx:item-tree (direx:item-at-point)))))
+
 (defun direx:find-item (&optional item)
   (interactive)
   (setq item (or item (direx:item-at-point!)))
@@ -904,6 +907,7 @@ mouse-2: find this node in other window"))
     (define-key map (kbd "C-M-<left>")  'direx:up-item)
     (define-key map (kbd "C-M-d")       'direx:down-item)
     (define-key map (kbd "C-M-<right>") 'direx:up-item)
+    (define-key map (kbd "e")           'direx:echo-item)
     (define-key map (kbd "f")           'direx:find-item)
     (define-key map (kbd "o")           'direx:find-item-other-window)
     (define-key map (kbd "C-o")         'direx:display-item)
