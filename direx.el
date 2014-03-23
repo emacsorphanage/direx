@@ -581,9 +581,6 @@ mouse-2: find this node in other window"))
         (dired-other-window dirname)
       (dired dirname))))
 
-(defmethod direx:generic-view-item ((item direx:directory-item) not-this-window)
-  (direx:generic-find-item item not-this-window))
-
 (defmethod direx:generic-display-item ((item direx:directory-item))
   (let ((dirname (direx:file-full-name (direx:item-tree item))))
     (display-buffer (dired-noselect dirname))))
