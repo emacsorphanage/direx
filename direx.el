@@ -183,6 +183,8 @@ descendants. You may add a heuristic method for speed.")
 
 (defgeneric direx:generic-find-item (item not-this-window))
 
+(defgeneric direx:generic-view-item (item not-this-window))
+
 (defgeneric direx:generic-display-item (item))
 
 (defgeneric direx:make-item (tree parent)
@@ -617,6 +619,12 @@ mouse-2: find this node in other window"))
         (find-file-other-window filename)
       (find-file filename))))
 
+(defmethod direx:generic-view-item ((item direx:regular-file-item) not-this-window)
+  (let ((filename (direx:file-full-name (direx:item-tree item))))
+    (if not-this-window
+        (view-file-other-window filename)
+      (view-file filename))))
+
 (defmethod direx:generic-display-item ((item direx:regular-file-item))
   (let ((filename (direx:file-full-name (direx:item-tree item))))
     (display-buffer (find-file-noselect filename))))
@@ -836,6 +844,16 @@ mouse-2: find this node in other window"))
   (setq item (or item (direx:item-at-point!)))
   (direx:generic-find-item item t))
 
+(defun direx:view-item (&optional item)
+  (interactive)
+  (setq item (or item (direx:item-at-point!)))
+  (direx:generic-view-item item nil))
+
+(defun direx:view-item-other-window (&optional item)
+  (interactive)
+  (setq item (or item (direx:item-at-point!)))
+  (direx:generic-view-item item t))
+
 (defun direx:display-item (&optional item)
   "Open ITEM at point without changing focus."
   (interactive)
@@ -910,6 +928,8 @@ mouse-2: find this node in other window"))
     (define-key map (kbd "e")           'direx:echo-item)
     (define-key map (kbd "f")           'direx:find-item)
     (define-key map (kbd "o")           'direx:find-item-other-window)
+    (define-key map (kbd "v")           'direx:view-item)
+    (define-key map (kbd "V")           'direx:view-item-other-window)
     (define-key map (kbd "C-o")         'direx:display-item)
     (define-key map (kbd "RET")         'direx:maybe-find-item)
     (define-key map (kbd "TAB")         'direx:toggle-item)
