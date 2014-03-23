@@ -452,6 +452,10 @@ mouse-2: find this node in other window"))
     (define-key map (kbd "M") 'direx:do-chmod-file)
     (define-key map (kbd "L") 'direx:do-load-file)
     (define-key map (kbd "B") 'direx:do-byte-compile-file)
+    (define-key map (kbd "G") 'direx:do-chgrp)
+    (define-key map (kbd "O") 'direx:do-chown)
+    (define-key map (kbd "T") 'direx:do-touch)
+    (define-key map (kbd "E") 'direx:echo-item)
     map))
 
 (defun direx:do-rename-file ()
@@ -540,6 +544,70 @@ mouse-2: find this node in other window"))
         (progn
           (direx:item-refresh-parent item)
           (direx:next-item))))))
+
+(defun direx:exec-command (program args)
+  (unless (executable-find program)
+    (error "Command '%s' not found" program))
+  (with-temp-buffer
+    (unless (zerop (apply 'call-process program nil t nil args))
+      (message "%s" (replace-regexp-in-string "[\r\n]+\\'" ""
+                                              (buffer-string))))))
+
+(defun direx:echo-item ()
+  (interactive)
+  (direx:item-echo (direx:item-at-point)))
+
+(defun direx:do-chxxx (program attr filename)
+  (let* ((prompt (format "Change %s of %s to: "
+                         attr (file-name-nondirectory filename)))
+         (new-attr (read-string prompt))
+         (args (list new-attr filename)))
+    (direx:exec-command program args)))
+
+(defun direx:do-chgrp ()
+  (interactive)
+  (let* ((item (direx:item-at-point!))
+         (file (direx:item-tree item))
+         (filename (direx:file-full-name file)))
+    (direx:do-chxxx "chgrp" "Group" filename)))
+
+(defun direx:do-chown ()
+  (interactive)
+  (let* ((item (direx:item-at-point!))
+         (file (direx:item-tree item))
+         (filename (direx:file-full-name file)))
+    (direx:do-chxxx "chown" "Owner" filename)))
+
+(defun direx:do-touch ()
+  (interactive)
+  (let* ((item (direx:item-at-point!))
+         (file (direx:item-tree item))
+         (filename (direx:file-full-name file))
+         (default (format-time-string "%Y%m%d%H%M.%S"
+                                      (nth 5 (file-attributes filename))))
+         (prompt (format "Change Timestamp of %s to (default now): "
+                         (file-name-nondirectory filename)))
+         (new-time (read-string prompt))
+         (args (if (string= new-time "")
+                   (list filename)
+                 (list "-t" new-time filename))))
+    (direx:exec-command "touch" args)))
+
+(defgeneric direx:item-echo (item))
+
+(defmethod direx:item-echo ((item direx:file-item))
+  (let* ((filename (direx:file-full-name (direx:item-tree item)))
+         (dired-actual-switches "-la")
+         (file-list (list (if (direx:regular-file-item-p item)
+                              (file-name-nondirectory filename)
+                            (direx:directory-basename filename))))
+         (default-directory (direx:directory-dirname filename)))
+    (with-temp-buffer
+      (dired-insert-directory default-directory
+                              dired-actual-switches
+                              file-list)
+      (goto-char (point-min))
+      (message "%s" (buffer-substring (point) (line-end-position))))))
 
 (defclass direx:regular-file-item (direx:file-item)
   ())
