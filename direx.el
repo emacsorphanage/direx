@@ -178,6 +178,8 @@ descendants. You may add a heuristic method for speed.")
          :accessor direx:item-face)
    (keymap :initarg :keymap
            :accessor direx:item-keymap)
+   (ignore :initarg :ignore
+           :accessor direx:item-ignore)
    (overlay :accessor direx:item-overlay)
    (open :accessor direx:item-open)))
 
@@ -346,7 +348,7 @@ mouse-2: find this node in other window"))
 
 (defun direx:item-expand-recursively (item &optional noexpand-ignored)
   (when (or (not noexpand-ignored)
-            (not (eq (direx:item-face item) 'dired-ignored)))
+            (not (direx:item-ignore item)))
     (direx:item-expand item)
     (dolist (child (direx:item-children item))
       (direx:item-expand-recursively child t))))
@@ -570,7 +572,8 @@ mouse-2: find this node in other window"))
                    :tree file
                    :parent parent
                    :face face
-                   :keymap direx:file-keymap)))
+                   :keymap direx:file-keymap
+                   :ignore (eq face 'dired-ignored))))
 
 (defclass direx:directory-item (direx:file-item)
   ())
@@ -594,7 +597,8 @@ mouse-2: find this node in other window"))
                    :tree dir
                    :parent parent
                    :face face
-                   :keymap direx:file-keymap)))
+                   :keymap direx:file-keymap
+                   :ignore (eq face 'dired-ignored))))
 
 
 
