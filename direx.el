@@ -164,6 +164,9 @@ descendants. You may add a heuristic method for speed.")
 (defclass direx:leaf (direx:tree)
   ())
 
+(defsubst direx:tree-leaf-p (tree)
+  (typep tree 'direx:leaf))
+
 
 
 ;;; Tree Widgets
@@ -179,7 +182,8 @@ descendants. You may add a heuristic method for speed.")
    (keymap :initarg :keymap
            :accessor direx:item-keymap)
    (overlay :accessor direx:item-overlay)
-   (open :accessor direx:item-open)))
+   (open :accessor direx:item-open)
+   (depth :accessor direx:item-depth)))
 
 (defgeneric direx:generic-find-item (item not-this-window))
 
@@ -193,28 +197,27 @@ descendants. You may add a heuristic method for speed.")
 (defmethod direx:make-item (tree parent)
   (make-instance 'direx:item :tree tree :parent parent))
 
-(defun direx:make-item-children (item)
+(defsubst direx:make-item-children-alist (item)
   (loop for child-tree in (direx:node-children (direx:item-tree item))
-        collect (direx:make-item child-tree item)))
+        collect `(,child-tree . ,(direx:make-item child-tree item))))
 
-(defun direx:item-equals (x y)
+(defsubst direx:make-item-children (item)
+  (loop for child-alist in (direx:make-item-children-alist item)
+        collect (cdr child-alist)))
+
+(defsubst direx:item-equals (x y)
   (direx:tree-equals (direx:item-tree x) (direx:item-tree y)))
 
-(defun direx:item-name (item)
+(defsubst direx:item-name (item)
   (direx:tree-name (direx:item-tree item)))
 
-(defun direx:item-leaf-p (item)
-  (typep (direx:item-tree item) 'direx:leaf))
+(defsubst direx:item-leaf-p (item)
+  (direx:tree-leaf-p (direx:item-tree item)))
 
-(defun direx:item-node-p (item)
+(defsubst direx:item-node-p (item)
   (typep (direx:item-tree item) 'direx:node))
 
-(defun direx:item-depth (item)
-  (direx:aif (direx:item-parent item)
-      (1+ (direx:item-depth it))
-    0))
-
-(defun direx:item-start (item)
+(defsubst direx:item-start (item)
   (overlay-start (direx:item-overlay item)))
 
 (defun direx:item-end (item)
@@ -233,58 +236,68 @@ descendants. You may add a heuristic method for speed.")
 
 ;; Rendering
 
-(defun direx:item-icon-part-offset (item)
-  (* (direx:item-depth item) (length direx:open-icon)))
+(defsubst direx:item-icon-part-offset (item &optional depth)
+  (* (or depth (direx:item-depth item)) (length direx:open-icon)))
 
-(defun direx:item-name-part-offset (item)
-  (+ (direx:item-icon-part-offset item) (length direx:open-icon)))
+(defsubst direx:item-name-part-offset (item &optional depth)
+  (+ (direx:item-icon-part-offset item depth) (length direx:open-icon)))
 
-(defun direx:item-render-indent-part (item)
-  (make-string (direx:item-icon-part-offset item) ? ))
+(defsubst direx:item-render-indent-part (item &optional depth)
+  (make-string (direx:item-icon-part-offset item depth) ? ))
 
-(defun direx:item-render-icon-part (item)
-  (if (direx:item-leaf-p item)
+(defsubst direx:item-render-icon-part (tree)
+  (if (direx:tree-leaf-p tree)
       direx:leaf-icon
     direx:closed-icon))
 
-(defun direx:item-render-name-part (item)
-  (propertize (direx:item-name item)
+(defsubst direx:item-render-name-part (item tree)
+  (propertize (direx:tree-name tree)
               'face (direx:item-face item)
               'mouse-face 'hightlight
               'help-echo "mouse-1: toggle or find this node
 mouse-2: find this node in other window"))
 
-(defun direx:item-render (item)
-  (concat (direx:item-render-indent-part item)
-          (direx:item-render-icon-part item)
-          (direx:item-render-name-part item)
+(defsubst direx:item-render (item tree depth)
+  (concat (direx:item-render-indent-part item depth)
+          (direx:item-render-icon-part tree)
+          (direx:item-render-name-part item tree)
           "\n"))
 
-(defun direx:item-make-overlay (item start end)
+(defsubst direx:item-make-overlay (item start end)
   (let ((overlay (make-overlay start end nil t nil)))
     (overlay-put overlay 'direx:item item)
     (overlay-put overlay 'keymap (direx:item-keymap item))
     (setf (direx:item-overlay item) overlay)
     overlay))
 
-(defun direx:item-insert (item)
+(defsubst direx:item-set-depth (item)
+  (setf (direx:item-depth item) (direx:aif (direx:item-parent item)
+                                    (1+ (direx:item-depth it))
+                                  0)))
+
+(defun direx:item-insert (item &optional tree)
   (let ((start (point))
         (buffer-read-only nil))
-    (insert (direx:item-render item))
+    (insert (direx:item-render item
+                               (or tree (direx:item-tree item))
+                               (direx:item-set-depth item)))
     (direx:item-make-overlay item start (point))
     item))
 
-(defun direx:item-insert-children (item)
-  (let ((children (direx:make-item-children item)))
+(defsubst direx:item-insert-children (item)
+  (let* ((children-alist (direx:make-item-children-alist item))
+         (children (loop for child-alist in children-alist
+                         collect (cdr child-alist))))
     (setf (direx:item-children item) children)
     (save-excursion
       (goto-char (overlay-end (direx:item-overlay item)))
-      (dolist (child children)
-        (direx:item-insert child)))))
+      (dolist (child-alist children-alist)
+        (direx:item-insert (cdr child-alist) (car child-alist))))))
 
-(defun direx:item-ensure-children (item)
+(defsubst direx:item-ensure-children (item)
   (unless (direx:item-children item)
-    (direx:item-insert-children item)))
+    (direx:item-insert-children item)
+    t))
 
 (defun* direx:item-delete (item)
   (let* ((overlay (direx:item-overlay item))
@@ -313,18 +326,17 @@ mouse-2: find this node in other window"))
                     (direx:item-icon-part-offset item)))
       (delete-char (length new-icon)))))
 
-(defun direx:item-visible-p (item)
+(defsubst direx:item-visible-p (item)
   (not (overlay-get (direx:item-overlay item) 'invisible)))
 
-(defun direx:item-show (item)
+(defsubst direx:item-show (item)
   (overlay-put (direx:item-overlay item) 'invisible nil))
 
-(defun direx:item-hide (item)
+(defsubst direx:item-hide (item)
   (overlay-put (direx:item-overlay item) 'invisible t))
 
 (defun direx:item-show-children (item)
-  (when (and (not (direx:item-leaf-p item))
-             (direx:item-open item))
+  (when (direx:item-open item)
     (dolist (child (direx:item-children item))
       (direx:item-show child)
       (direx:item-show-children child))))
@@ -338,8 +350,8 @@ mouse-2: find this node in other window"))
 (defun direx:item-expand (item)
   (unless (direx:item-leaf-p item)
     (setf (direx:item-open item) t)
-    (direx:item-ensure-children item)
-    (direx:item-show-children item)
+    (or (direx:item-ensure-children item)
+        (direx:item-show-children item))
     (direx:item-change-icon item direx:open-icon)))
 
 (defun direx:item-ensure-open (item)
