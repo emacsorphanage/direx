@@ -414,9 +414,9 @@ mouse-2: find this node in other window"))
            (equal (direx:file-full-name x) (direx:file-full-name y)))))
 
 (defmethod direx:node-parent ((file direx:file))
-  (direx:awhen (file-name-directory (directory-file-name (direx:file-full-name file)))
-    (when (file-directory-p it)
-      (direx:make-directory it))))
+  (let ((parent (file-name-directory (directory-file-name (direx:file-full-name file)))))
+    (when (and parent (file-directory-p parent))
+      (direx:make-directory parent))))
 
 (defclass direx:regular-file (direx:file direx:leaf)
   ())
