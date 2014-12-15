@@ -699,7 +699,8 @@ mouse-2: find this node in other window"))
   (let ((buffer (generate-new-buffer (direx:tree-name root))))
     (with-current-buffer buffer
       (direx:direx-mode)
-      (setq default-directory (direx:file-full-name root)))
+      (setq default-directory (direx:file-full-name root))
+      (setq-local revert-buffer-function 'direx:revert-buffer))
     buffer))
 
 (defmethod direx:make-buffer ((dir direx:directory))
@@ -707,6 +708,9 @@ mouse-2: find this node in other window"))
     (set (make-local-variable 'dired-directory)
          (direx:file-full-name dir))
     (current-buffer)))
+
+(defun direx:revert-buffer (ignore-auto noconfirm)
+  (direx:refresh-whole-tree))
 
 (defun direx:make-buffer-for-root (root)
   (let ((buffer (direx:make-buffer root)))
@@ -826,7 +830,7 @@ mouse-2: find this node in other window"))
 
 (defun direx:refresh-whole-tree (&optional item)
   (interactive)
-  (setq item (or item (direx:item-at-point!)))
+  (setq item (or item (direx:item-at-point) direx:root-item))
   (direx:item-refresh-recursively (direx:item-root item))
   (direx:move-to-item-name-part item))
 
