@@ -1,10 +1,10 @@
 ;;; direx.el --- Simple Directory Explorer
 
-;; Copyright (C) 2011, 2012  Tomohiro Matsuyama
+;; Copyright (C) 2011-2015  Tomohiro Matsuyama
 
-;; Author: Tomohiro Matsuyama <tomo@cx4a.org>
+;; Author: Tomohiro Matsuyama <m2ym.pub@gmail.com>
 ;; Keywords: convenience
-;; Version: 0.1alpha
+;; Version: 1.0.0
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -30,7 +30,7 @@
 (require 'dired)
 (require 'regexp-opt)
 
-(defconst direx:version "0.1alpha")
+(defconst direx:version "1.0.0")
 
 (defgroup direx nil
   "Directory Explorer."
