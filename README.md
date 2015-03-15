@@ -10,7 +10,7 @@ It also works as a generic tree explore library.
 Screenshots
 -----------
 
-![](http://cx4a.org/software/direx/direx-direx.png)
+![](https://raw.githubusercontent.com/m2ym/direx-el/master/etc/images/direx.png)
 
 Usage
 -----
