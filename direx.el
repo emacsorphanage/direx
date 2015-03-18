@@ -737,18 +737,25 @@ mouse-2: find this node in other window"))
         (direx:move-to-item-name-part root-item)))))
 
 (defun direx:goto-item-for-tree-1 (tree)
-  (goto-char (point-min))
-  (loop for item = (direx:item-at-point)
+  (loop with children = (direx:item-children direx:root-item)
+        with idx = -1
+        for item = (nth (incf idx) children)
         for item-tree = (and item (direx:item-tree item))
         while item-tree
         if (direx:tree-equals item-tree tree)
-        return (direx:move-to-item-name-part item)
+        return (progn
+                 (direx:item-show item)
+                 (direx:move-to-item-name-part item))
         else if (and (typep item-tree 'direx:node)
                      (direx:node-contains item-tree tree))
-        do (direx:down-item)
-        else
-        do (direx:next-sibling-item)
-        finally (error "Item not found")))
+        do (progn
+             (direx:item-show item)
+             (direx:item-ensure-open item)
+             (setq children (direx:item-children item))
+             (setq idx -1))
+        finally
+        (goto-char (point-min))
+        (error "Item not found")))
 
 (defun direx:goto-item-for-tree (tree)
   (ignore-errors
