@@ -24,7 +24,7 @@
 
 ;;; Code:
 
-(require 'cl)
+(require 'cl-lib)
 (require 'direx)
 
 (defgroup direx-project nil
@@ -40,21 +40,21 @@ a project root or not."
   :group 'direx-project)
 
 (defun direx-project:vc-root-p (dirname)
-  (loop for vc-dir in '(".git" ".hg" ".bzr")
-        thereis (file-exists-p (expand-file-name vc-dir dirname))))
+  (cl-loop for vc-dir in '(".git" ".hg" ".bzr")
+           thereis (file-exists-p (expand-file-name vc-dir dirname))))
 
 (defun direx-project:project-root-p (dirname)
-  (some (lambda (fun) (funcall fun dirname))
-        direx-project:project-root-predicate-functions))
+  (cl-some (lambda (fun) (funcall fun dirname))
+           direx-project:project-root-predicate-functions))
 
 (defun direx-project:find-project-root-noselect (filename)
   (interactive)
-  (loop for parent-dirname in (if (file-directory-p filename)
-                                  (cons filename
-                                        (direx:directory-parents filename))
-                                (direx:directory-parents filename))
-        if (direx-project:project-root-p parent-dirname)
-        return (direx:find-directory-noselect parent-dirname)))
+  (cl-loop for parent-dirname in (if (file-directory-p filename)
+                                     (cons filename
+                                           (direx:directory-parents filename))
+                                   (direx:directory-parents filename))
+           if (direx-project:project-root-p parent-dirname)
+           return (direx:find-directory-noselect parent-dirname)))
 
 (defun direx-project:jump-to-project-root-noselect ()
   (interactive)

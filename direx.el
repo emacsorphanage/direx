@@ -25,7 +25,7 @@
 
 ;;; Code:
 
-(require 'cl)
+(require 'cl-lib)
 (require 'eieio)
 (require 'dired)
 (require 'regexp-opt)
@@ -104,14 +104,14 @@
     (direx:canonical-dirname dirname))))
 
 (defun direx:directory-parents (filename)
-  (loop for current-dirname = (direx:canonical-filename filename) then parent-dirname
-        for parent-dirname = (direx:directory-dirname current-dirname)
-        while (and parent-dirname (< (length parent-dirname) (length current-dirname)))
-        collect parent-dirname))
+  (cl-loop for current-dirname = (direx:canonical-filename filename) then parent-dirname
+           for parent-dirname = (direx:directory-dirname current-dirname)
+           while (and parent-dirname (< (length parent-dirname) (length current-dirname)))
+           collect parent-dirname))
 
 (defmacro direx:save-excursion-from-error (&rest body)
-  (let ((point (gensym "point"))
-        (error (gensym "error")))
+  (let ((point (cl-gensym "point"))
+        (error (cl-gensym "error")))
     `(let ((,point (point)))
        (condition-case ,error
            (progn ,@body)
@@ -156,10 +156,10 @@ recursively and check if the DESCENDANT is a member of the
 descendants. You may add a heuristic method for speed.")
 
 (defmethod direx:node-contains (node descendant)
-  (loop for child in (direx:node-children node) thereis
-        (or (direx:tree-equals child descendant)
-            (and (typep child 'direx:node)
-                 (direx:node-contains child descendant)))))
+  (cl-loop for child in (direx:node-children node) thereis
+           (or (direx:tree-equals child descendant)
+               (and (typep child 'direx:node)
+                    (direx:node-contains child descendant)))))
 
 (defclass direx:leaf (direx:tree)
   ())
@@ -194,8 +194,8 @@ descendants. You may add a heuristic method for speed.")
   (make-instance 'direx:item :tree tree :parent parent))
 
 (defun direx:make-item-children (item)
-  (loop for child-tree in (direx:node-children (direx:item-tree item))
-        collect (direx:make-item child-tree item)))
+  (cl-loop for child-tree in (direx:node-children (direx:item-tree item))
+           collect (direx:make-item child-tree item)))
 
 (defun direx:item-equals (x y)
   (direx:tree-equals (direx:item-tree x) (direx:item-tree y)))
@@ -286,7 +286,7 @@ mouse-2: find this node in other window"))
   (unless (direx:item-children item)
     (direx:item-insert-children item)))
 
-(defun* direx:item-delete (item)
+(cl-defun direx:item-delete (item)
   (let* ((overlay (direx:item-overlay item))
          (start (overlay-start overlay))
          (end (overlay-end overlay))
@@ -369,31 +369,32 @@ mouse-2: find this node in other window"))
 (defmethod direx:item-refresh ((item direx:item))
   (when (and (not (direx:item-leaf-p item))
              (direx:item-children item))
-    (loop with point = (overlay-end (direx:item-overlay item))
-          with old-children = (direx:item-children item)
-          for new-child in (direx:make-item-children item)
-          for old-child = (find-if (direx:apply-partially 'direx:item-equals new-child)
-                                   old-children)
-          if old-child
-          do (setq new-child old-child
-                   old-children (delq old-child old-children))
-          else
-          do (save-excursion
-               (goto-char point)
-               (direx:item-insert new-child))
-          do (setq point (direx:item-end new-child))
-          collect new-child into new-children
-          finally
-          (dolist (old-child old-children)
-            (direx:item-delete-recursively old-child))
-          (setf (direx:item-children item) new-children))))
+    (cl-loop with point = (overlay-end (direx:item-overlay item))
+             with old-children = (direx:item-children item)
+             for new-child in (direx:make-item-children item)
+             for old-child = (cl-find-if (direx:apply-partially
+                                          'direx:item-equals new-child)
+                                         old-children)
+             if old-child
+             do (setq new-child old-child
+                      old-children (delq old-child old-children))
+             else
+             do (save-excursion
+                  (goto-char point)
+                  (direx:item-insert new-child))
+             do (setq point (direx:item-end new-child))
+             collect new-child into new-children
+             finally
+             (dolist (old-child old-children)
+               (direx:item-delete-recursively old-child))
+             (setf (direx:item-children item) new-children))))
 
 (defun direx:item-refresh-recursively (item)
   (direx:item-refresh item)
   (dolist (child (direx:item-children item))
     (direx:item-refresh-recursively child)))
 
-(defun* direx:item-refresh-parent (item &key recursive)
+(cl-defun direx:item-refresh-parent (item &key recursive)
   (direx:awhen (direx:item-parent item)
     (direx:item-refresh-recursively it)))
 
@@ -446,14 +447,14 @@ mouse-2: find this node in other window"))
                    :full-name dirname)))
 
 (defmethod direx:node-children ((dir direx:directory))
-  (loop with dirname = (direx:file-full-name dir)
-        for filename in (directory-files dirname t)
-        for basename = (file-name-nondirectory filename)
-        unless (string-match dired-trivial-filenames basename)
-        if (file-directory-p filename)
-        collect (direx:make-directory filename)
-        else
-        collect (direx:make-regular-file filename)))
+  (cl-loop with dirname = (direx:file-full-name dir)
+           for filename in (directory-files dirname t)
+           for basename = (file-name-nondirectory filename)
+           unless (string-match dired-trivial-filenames basename)
+           if (file-directory-p filename)
+           collect (direx:make-directory filename)
+           else
+           collect (direx:make-regular-file filename)))
 
 (defmethod direx:node-contains ((dir direx:directory) file)
   (and (typep file 'direx:file)
@@ -678,9 +679,9 @@ mouse-2: find this node in other window"))
       (direx:item-at-point (posn-point (event-end event))))))
 
 (defun direx:find-root-item-if (predicate)
-  (find-if predicate
-           (mapcar (direx:apply-partially 'buffer-local-value 'direx:root-item)
-                   (direx:buffer-list))))
+  (cl-find-if predicate
+              (mapcar (direx:apply-partially 'buffer-local-value 'direx:root-item)
+                      (direx:buffer-list))))
 
 (defun direx:find-root-item-for-root (root)
   (direx:find-root-item-if
@@ -691,7 +692,7 @@ mouse-2: find this node in other window"))
        (eq (buffer-local-value 'major-mode buffer) 'direx:direx-mode)))
 
 (defun direx:buffer-list ()
-  (remove-if-not 'direx:buffer-live-p (buffer-list)))
+  (cl-remove-if-not 'direx:buffer-live-p (buffer-list)))
 
 (defgeneric direx:make-buffer (root))
 
@@ -704,7 +705,10 @@ mouse-2: find this node in other window"))
     buffer))
 
 (defmethod direx:make-buffer ((dir direx:directory))
-  (with-current-buffer (call-next-method)
+  (with-current-buffer (if (fboundp 'cl-call-next-method)
+                           (cl-call-next-method)
+                         (with-no-warnings
+                           (call-next-method)))
     (set (make-local-variable 'dired-directory)
          (direx:file-full-name dir))
     (current-buffer)))
@@ -738,17 +742,17 @@ mouse-2: find this node in other window"))
 
 (defun direx:goto-item-for-tree-1 (tree)
   (goto-char (point-min))
-  (loop for item = (direx:item-at-point)
-        for item-tree = (and item (direx:item-tree item))
-        while item-tree
-        if (direx:tree-equals item-tree tree)
-        return (direx:move-to-item-name-part item)
-        else if (and (typep item-tree 'direx:node)
-                     (direx:node-contains item-tree tree))
-        do (direx:down-item)
-        else
-        do (direx:next-sibling-item)
-        finally (error "Item not found")))
+  (cl-loop for item = (direx:item-at-point)
+           for item-tree = (and item (direx:item-tree item))
+           while item-tree
+           if (direx:tree-equals item-tree tree)
+           return (direx:move-to-item-name-part item)
+           else if (and (typep item-tree 'direx:node)
+                        (direx:node-contains item-tree tree))
+           do (direx:down-item)
+           else
+           do (direx:next-sibling-item)
+           finally (error "Item not found")))
 
 (defun direx:goto-item-for-tree (tree)
   (ignore-errors
@@ -771,21 +775,21 @@ mouse-2: find this node in other window"))
 
 (defun direx:next-item (&optional arg)
   (interactive "p")
-  (loop unless (zerop (forward-line arg))
-        do (error (if (plusp arg) "End of buffer" "Beginning of buffer"))
-        for item = (direx:item-at-point!)
-        when (direx:item-visible-p item)
-        return (direx:move-to-item-name-part item)))
+  (cl-loop unless (zerop (forward-line arg))
+           do (error (if (plusp arg) "End of buffer" "Beginning of buffer"))
+           for item = (direx:item-at-point!)
+           when (direx:item-visible-p item)
+           return (direx:move-to-item-name-part item)))
 
 (defun direx:previous-item (&optional arg)
   (interactive "p")
   (direx:next-item (if (null arg) -1 (- arg))))
 
 (defun direx:up-item-1 (item)
-  (loop with parent = (direx:item-parent item)
-        while (and (zerop (forward-line -1))
-                   (not (eq (direx:item-at-point) parent)))
-        finally (direx:move-to-item-name-part)))
+  (cl-loop with parent = (direx:item-parent item)
+           while (and (zerop (forward-line -1))
+                      (not (eq (direx:item-at-point) parent)))
+           finally (direx:move-to-item-name-part)))
 
 (defun direx:up-item ()
   (interactive)
@@ -802,20 +806,20 @@ mouse-2: find this node in other window"))
   (direx:next-item))
 
 (defun direx:next-sibling-item-1 (item arg)
-  (loop with parent = (direx:item-parent item)
-        with siblings = (when parent (direx:item-children parent))
-        with ordered-siblings = (if (plusp arg) siblings (reverse siblings))
-        with sibling = (second (memq item ordered-siblings))
-        with point = (point)
-        with item
-        while (and sibling
-                   (zerop (forward-line arg))
-                   (setq item (direx:item-at-point)))
-        if (eq item sibling)
-        return (direx:move-to-item-name-part item)
-        finally
-        (goto-char point)
-        (error "No sibling")))
+  (cl-loop with parent = (direx:item-parent item)
+           with siblings = (when parent (direx:item-children parent))
+           with ordered-siblings = (if (plusp arg) siblings (reverse siblings))
+           with sibling = (second (memq item ordered-siblings))
+           with point = (point)
+           with item
+           while (and sibling
+                      (zerop (forward-line arg))
+                      (setq item (direx:item-at-point)))
+           if (eq item sibling)
+           return (direx:move-to-item-name-part item)
+           finally
+           (goto-char point)
+           (error "No sibling")))
 
 (defun direx:next-sibling-item (&optional arg)
   (interactive "p")
@@ -969,12 +973,12 @@ mouse-2: find this node in other window"))
 
 (defun direx:find-directory-reuse-noselect (dirname)
   (interactive "DDirex (directory): ")
-  (loop for current-dirname = dirname then parent-dirname
-        for parent-dirname in (direx:directory-parents dirname)
-        for dir = (direx:make-directory current-dirname)
-        for buffer = (direx:find-buffer-for-root dir)
-        if buffer return buffer
-        finally return (direx:find-directory-noselect dirname)))
+  (cl-loop for current-dirname = dirname then parent-dirname
+           for parent-dirname in (direx:directory-parents dirname)
+           for dir = (direx:make-directory current-dirname)
+           for buffer = (direx:find-buffer-for-root dir)
+           if buffer return buffer
+           finally return (direx:find-directory-noselect dirname)))
 
 (defun direx:find-directory-reuse (dirname)
   (interactive "DDirex (directory): ")
