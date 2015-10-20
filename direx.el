@@ -26,6 +26,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(eval-when-compile (require 'cl))
 (require 'eieio)
 (require 'dired)
 (require 'regexp-opt)
@@ -73,9 +74,10 @@
 (defun direx:apply-partially (fun &rest args)
   (if (fboundp 'apply-partially)
       (apply 'apply-partially fun args)
+    (require 'cl)
     (lexical-let ((fun fun) (args args))
       (lambda (&rest restargs)
-        (apply fun (append args restargs))))))
+	(apply fun (append args restargs))))))
 
 (defun direx:starts-with (x y)
   (and (<= (length y) (length x))
@@ -127,38 +129,38 @@
   ((name :initarg :name
          :accessor direx:tree-name)))
 
-(defgeneric direx:tree-equals (x y)
+(cl-defgeneric direx:tree-equals (x y)
   "Returns t if X is equal to Y.")
 
-(defmethod direx:tree-equals (x y)
+(cl-defmethod direx:tree-equals (x y)
   (eq x y))
 
-(defgeneric direx:tree-status (tree)
+(cl-defgeneric direx:tree-status (tree)
   "Returns a status of TREE in string.")
 
-(defmethod direx:tree-status (tree)
+(cl-defmethod direx:tree-status (tree)
   "")
 
 (defclass direx:node (direx:tree)
   ())
 
-(defgeneric direx:node-children (node)
+(cl-defgeneric direx:node-children (node)
   "Returns the children of the NODE.")
 
-(defmethod direx:node-children (node)
+(cl-defmethod direx:node-children (node)
   nil)
 
-(defgeneric direx:node-contains (node descendant)
+(cl-defgeneric direx:node-contains (node descendant)
   "Returns t if the NODE has the DESCENDANT. The default
 implementation of this generic function uses
 `direx:node-children' to expand the descendants of the NODE
 recursively and check if the DESCENDANT is a member of the
 descendants. You may add a heuristic method for speed.")
 
-(defmethod direx:node-contains (node descendant)
+(cl-defmethod direx:node-contains (node descendant)
   (cl-loop for child in (direx:node-children node) thereis
            (or (direx:tree-equals child descendant)
-               (and (typep child 'direx:node)
+               (and (cl-typep child 'direx:node)
                     (direx:node-contains child descendant)))))
 
 (defclass direx:leaf (direx:tree)
@@ -181,16 +183,16 @@ descendants. You may add a heuristic method for speed.")
    (overlay :accessor direx:item-overlay)
    (open :accessor direx:item-open)))
 
-(defgeneric direx:generic-find-item (item not-this-window))
+(cl-defgeneric direx:generic-find-item (item not-this-window))
 
-(defgeneric direx:generic-view-item (item not-this-window))
+(cl-defgeneric direx:generic-view-item (item not-this-window))
 
-(defgeneric direx:generic-display-item (item))
+(cl-defgeneric direx:generic-display-item (item))
 
-(defgeneric direx:make-item (tree parent)
+(cl-defgeneric direx:make-item (tree parent)
   "Returns a item of the TREE.")
 
-(defmethod direx:make-item (tree parent)
+(cl-defmethod direx:make-item (tree parent)
   (make-instance 'direx:item :tree tree :parent parent))
 
 (defun direx:make-item-children (item)
@@ -204,10 +206,10 @@ descendants. You may add a heuristic method for speed.")
   (direx:tree-name (direx:item-tree item)))
 
 (defun direx:item-leaf-p (item)
-  (typep (direx:item-tree item) 'direx:leaf))
+  (cl-typep (direx:item-tree item) 'direx:leaf))
 
 (defun direx:item-node-p (item)
-  (typep (direx:item-tree item) 'direx:node))
+  (cl-typep (direx:item-tree item) 'direx:node))
 
 (defun direx:item-depth (item)
   (direx:aif (direx:item-parent item)
@@ -366,7 +368,7 @@ mouse-2: find this node in other window"))
       (direx:item-collapse item)
     (direx:item-expand item)))
 
-(defmethod direx:item-refresh ((item direx:item))
+(cl-defmethod direx:item-refresh ((item direx:item))
   (when (and (not (direx:item-leaf-p item))
              (direx:item-children item))
     (cl-loop with point = (overlay-end (direx:item-overlay item))
@@ -408,12 +410,12 @@ mouse-2: find this node in other window"))
   ((full-name :initarg :full-name
               :accessor direx:file-full-name)))
 
-(defmethod direx:tree-equals ((x direx:file) y)
+(cl-defmethod direx:tree-equals ((x direx:file) y)
   (or (eq x y)
-      (and (typep y 'direx:file)
+      (and (cl-typep y 'direx:file)
            (equal (direx:file-full-name x) (direx:file-full-name y)))))
 
-(defmethod direx:tree-status ((file direx:file))
+(cl-defmethod direx:tree-status ((file direx:file))
   (let* ((filename (direx:file-full-name file))
          (dired-actual-switches "-la")
          (file-list (list (if (direx:regular-file-item-p file)
@@ -446,7 +448,7 @@ mouse-2: find this node in other window"))
                    :name name
                    :full-name dirname)))
 
-(defmethod direx:node-children ((dir direx:directory))
+(cl-defmethod direx:node-children ((dir direx:directory))
   (cl-loop with dirname = (direx:file-full-name dir)
            for filename in (directory-files dirname t)
            for basename = (file-name-nondirectory filename)
@@ -456,8 +458,8 @@ mouse-2: find this node in other window"))
            else
            collect (direx:make-regular-file filename)))
 
-(defmethod direx:node-contains ((dir direx:directory) file)
-  (and (typep file 'direx:file)
+(cl-defmethod direx:node-contains ((dir direx:directory) file)
+  (and (cl-typep file 'direx:file)
        (direx:starts-with (direx:file-full-name file)
                           (direx:file-full-name dir))))
 
@@ -512,7 +514,7 @@ mouse-2: find this node in other window"))
   (let* ((item (direx:item-at-point!))
          (file (direx:item-tree item))
          (parent-dir
-          (if (typep file 'direx:directory)
+          (if (cl-typep file 'direx:directory)
               (direx:file-full-name file)
             (direx:directory-dirname
              (direx:file-full-name file))))
@@ -614,23 +616,23 @@ mouse-2: find this node in other window"))
 (defclass direx:regular-file-item (direx:file-item)
   ())
 
-(defmethod direx:generic-find-item ((item direx:regular-file-item) not-this-window)
+(cl-defmethod direx:generic-find-item ((item direx:regular-file-item) not-this-window)
   (let ((filename (direx:file-full-name (direx:item-tree item))))
     (if not-this-window
         (find-file-other-window filename)
       (find-file filename))))
 
-(defmethod direx:generic-view-item ((item direx:regular-file-item) not-this-window)
+(cl-defmethod direx:generic-view-item ((item direx:regular-file-item) not-this-window)
   (let ((filename (direx:file-full-name (direx:item-tree item))))
     (if not-this-window
         (view-file-other-window filename)
       (view-file filename))))
 
-(defmethod direx:generic-display-item ((item direx:regular-file-item))
+(cl-defmethod direx:generic-display-item ((item direx:regular-file-item))
   (let ((filename (direx:file-full-name (direx:item-tree item))))
     (display-buffer (find-file-noselect filename))))
 
-(defmethod direx:make-item ((file direx:regular-file) parent)
+(cl-defmethod direx:make-item ((file direx:regular-file) parent)
   (let* ((filename (direx:file-full-name file))
          (face (when (string-match direx:ignored-files-regexp filename)
                  'dired-ignored)))
@@ -643,17 +645,17 @@ mouse-2: find this node in other window"))
 (defclass direx:directory-item (direx:file-item)
   ())
 
-(defmethod direx:generic-find-item ((item direx:directory-item) not-this-window)
+(cl-defmethod direx:generic-find-item ((item direx:directory-item) not-this-window)
   (let ((dirname (direx:file-full-name (direx:item-tree item))))
     (if not-this-window
         (dired-other-window dirname)
       (dired dirname))))
 
-(defmethod direx:generic-display-item ((item direx:directory-item))
+(cl-defmethod direx:generic-display-item ((item direx:directory-item))
   (let ((dirname (direx:file-full-name (direx:item-tree item))))
     (display-buffer (dired-noselect dirname))))
 
-(defmethod direx:make-item ((dir direx:directory) parent)
+(cl-defmethod direx:make-item ((dir direx:directory) parent)
   (make-instance 'direx:directory-item
                  :tree dir
                  :parent parent
@@ -694,9 +696,9 @@ mouse-2: find this node in other window"))
 (defun direx:buffer-list ()
   (cl-remove-if-not 'direx:buffer-live-p (buffer-list)))
 
-(defgeneric direx:make-buffer (root))
+(cl-defgeneric direx:make-buffer (root))
 
-(defmethod direx:make-buffer ((root direx:tree))
+(cl-defmethod direx:make-buffer ((root direx:tree))
   (let ((buffer (generate-new-buffer (direx:tree-name root))))
     (with-current-buffer buffer
       (direx:direx-mode)
@@ -704,7 +706,7 @@ mouse-2: find this node in other window"))
       (setq-local revert-buffer-function 'direx:revert-buffer))
     buffer))
 
-(defmethod direx:make-buffer ((dir direx:directory))
+(cl-defmethod direx:make-buffer ((dir direx:directory))
   (with-current-buffer (if (fboundp 'cl-call-next-method)
                            (cl-call-next-method)
                          (with-no-warnings
@@ -747,7 +749,7 @@ mouse-2: find this node in other window"))
            while item-tree
            if (direx:tree-equals item-tree tree)
            return (direx:move-to-item-name-part item)
-           else if (and (typep item-tree 'direx:node)
+           else if (and (cl-typep item-tree 'direx:node)
                         (direx:node-contains item-tree tree))
            do (direx:down-item)
            else
@@ -776,7 +778,7 @@ mouse-2: find this node in other window"))
 (defun direx:next-item (&optional arg)
   (interactive "p")
   (cl-loop unless (zerop (forward-line arg))
-           do (error (if (plusp arg) "End of buffer" "Beginning of buffer"))
+           do (error (if (cl-plusp arg) "End of buffer" "Beginning of buffer"))
            for item = (direx:item-at-point!)
            when (direx:item-visible-p item)
            return (direx:move-to-item-name-part item)))
@@ -808,8 +810,8 @@ mouse-2: find this node in other window"))
 (defun direx:next-sibling-item-1 (item arg)
   (cl-loop with parent = (direx:item-parent item)
            with siblings = (when parent (direx:item-children parent))
-           with ordered-siblings = (if (plusp arg) siblings (reverse siblings))
-           with sibling = (second (memq item ordered-siblings))
+           with ordered-siblings = (if (cl-plusp arg) siblings (reverse siblings))
+           with sibling = (cadr (memq item ordered-siblings))
            with point = (point)
            with item
            while (and sibling
