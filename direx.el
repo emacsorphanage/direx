@@ -707,10 +707,7 @@ mouse-2: find this node in other window"))
     buffer))
 
 (defmethod direx:make-buffer ((dir direx:directory))
-  (with-current-buffer (if (fboundp 'cl-call-next-method)
-                           (cl-call-next-method)
-                         (with-no-warnings
-                           (call-next-method)))
+  (with-current-buffer (call-next-method)
     (set (make-local-variable 'dired-directory)
          (direx:file-full-name dir))
     (current-buffer)))
