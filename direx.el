@@ -897,6 +897,17 @@ mouse-2: find this node in other window"))
   (direx:item-collapse item)
   (direx:move-to-item-name-part item))
 
+(defun direx:item-collapse-recursively (item)
+  (direx:item-collapse item)
+  (dolist (child (direx:item-children item))
+    (direx:item-collapse-recursively child)))
+
+(defun direx:collapse-item-recursively (&optional item)
+  (interactive)
+  (setq item (or item (direx:item-at-point!)))
+  (direx:item-collapse-recursively item)
+  (direx:move-to-item-name-part item))
+
 (defun direx:toggle-item (&optional item)
   (interactive)
   (setq item (or item (direx:item-at-point!)))
