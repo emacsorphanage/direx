@@ -691,7 +691,9 @@ mouse-2: find this node in other window"))
 
 (defun direx:buffer-live-p (buffer)
   (and (buffer-live-p buffer)
-       (eq (buffer-local-value 'major-mode buffer) 'direx:direx-mode)))
+       (let ((mode (buffer-local-value 'major-mode buffer)))
+         (or (eq mode 'direx:direx-mode)
+             (eq (get-mode-local-parent mode) 'direx:direx-mode)))))
 
 (defun direx:buffer-list ()
   (cl-remove-if-not 'direx:buffer-live-p (buffer-list)))
