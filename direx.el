@@ -30,6 +30,7 @@
 (require 'eieio)
 (require 'dired)
 (require 'regexp-opt)
+(require 'mode-local)
 
 (defconst direx:version "1.0.0")
 
