@@ -59,6 +59,12 @@
   :type 'string
   :group 'direx)
 
+(defcustom direx:ignored-dirs-regexp
+  (concat "\\`" (regexp-opt '(".svn" ".git" ".hg")) "\\'")
+  ""
+  :type 'string
+  :group 'direx)
+
 
 
 ;;; Utilities
@@ -180,6 +186,8 @@ descendants. You may add a heuristic method for speed.")
          :accessor direx:item-face)
    (keymap :initarg :keymap
            :accessor direx:item-keymap)
+   (ignore :initarg :ignore
+           :accessor direx:item-ignore)
    (overlay :accessor direx:item-overlay)
    (open :accessor direx:item-open)))
 
@@ -348,10 +356,12 @@ mouse-2: find this node in other window"))
   (unless (direx:item-open item)
     (direx:item-expand item)))
 
-(defun direx:item-expand-recursively (item)
-  (direx:item-expand item)
-  (dolist (child (direx:item-children item))
-    (direx:item-expand-recursively child)))
+(defun direx:item-expand-recursively (item &optional noexpand-ignored)
+  (when (or (not noexpand-ignored)
+            (not (direx:item-ignore item)))
+    (direx:item-expand item)
+    (dolist (child (direx:item-children item))
+      (direx:item-expand-recursively child t))))
 
 (defun direx:item-collapse (item)
   (unless (direx:item-leaf-p item)
@@ -648,7 +658,8 @@ mouse-2: find this node in other window"))
                    :tree file
                    :parent parent
                    :face face
-                   :keymap direx:file-keymap)))
+                   :keymap direx:file-keymap
+                   :ignore (eq face 'dired-ignored))))
 
 (defclass direx:directory-item (direx:file-item)
   ())
@@ -664,11 +675,16 @@ mouse-2: find this node in other window"))
     (display-buffer (dired-noselect dirname))))
 
 (defmethod direx:make-item ((dir direx:directory) parent)
-  (make-instance 'direx:directory-item
-                 :tree dir
-                 :parent parent
-                 :face 'dired-directory
-                 :keymap direx:file-keymap))
+  (let* ((basename (direx:tree-name dir))
+         (face (if (string-match direx:ignored-dirs-regexp basename)
+                   'dired-ignored
+                 'dired-directory)))
+    (make-instance 'direx:directory-item
+                   :tree dir
+                   :parent parent
+                   :face face
+                   :keymap direx:file-keymap
+                   :ignore (eq face 'dired-ignored))))
 
 
 
