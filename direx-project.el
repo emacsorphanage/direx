@@ -1,4 +1,4 @@
-;;; direx-project.el --- Project Module for Direx
+;;; direx-project.el --- Project Module for Direx  -*- lexical-binding:t -*-
 
 ;; Copyright (C) 2012-2015  Tomohiro Matsuyama
 
